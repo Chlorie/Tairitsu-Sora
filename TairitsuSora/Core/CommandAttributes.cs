@@ -2,7 +2,7 @@
 
 namespace TairitsuSora.Core;
 
-[AttributeUsage(AttributeTargets.Class)]
+[AttributeUsage(AttributeTargets.Class, Inherited = false)]
 [MeansImplicitUse]
 public class RegisterCommandAttribute : Attribute { }
 
@@ -10,12 +10,12 @@ public class RegisterCommandAttribute : Attribute { }
 [MeansImplicitUse]
 public class MessageHandlerAttribute : Attribute
 {
-    public string Arguments { get; set; } = "";
+    public string Signature { get; set; } = "";
     public string? Description { get; set; }
 
     /// <summary>
     /// If any exception is caught in the handling process, the exception message
     /// is quote replied to the original message.
     /// </summary>
-    public bool ReplyException { get; set; }
+    public bool ReplyException { get; set; } = true;
 }

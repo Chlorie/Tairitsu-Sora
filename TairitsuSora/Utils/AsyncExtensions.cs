@@ -25,6 +25,8 @@ public static class AsyncExtensions
     public static ValueTask IgnoreCancellation(this ValueTask task)
         => task.IgnoreException<OperationCanceledException>(false);
 
+    public static async ValueTask AsValueTask(this Task task) => await task.ConfigureAwait(false);
+
     public static async ValueTask WhenAll(this IEnumerable<ValueTask> tasks)
     {
         var list = tasks.ToReadOnlyList();

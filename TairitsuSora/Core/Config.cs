@@ -10,7 +10,7 @@ public class BotConfig
     [JsonInclude] public long BotId;
     [JsonInclude] public OneBotConfig OneBotConfig = new();
     [JsonInclude] public long[] Admins = Array.Empty<long>();
-    [JsonInclude] public Dictionary<string, IReadOnlySet<long>> CommandEnabledGroups = new();
+    [JsonInclude] public Dictionary<string, HashSet<long>> CommandEnabledGroups = new();
     [JsonInclude] public Dictionary<string, JsonNode> CommandConfigs = new();
 
     public static BotConfig Load(string path)

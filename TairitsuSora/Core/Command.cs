@@ -7,8 +7,9 @@ public abstract class Command
 {
     public const string TriggerPrefix = "/";
     public abstract CommandInfo Info { get; }
-    public abstract ValueTask InitializeAsync();
-    public abstract ValueTask ExecuteAsync();
+    public virtual ValueTask InitializeAsync() => ValueTask.CompletedTask;
+    public virtual ValueTask ExecuteAsync()
+        => Task.Delay(-1, Application.Instance.CancellationToken).AsValueTask().IgnoreCancellation();
 
     public IReadOnlySet<long> EnabledGroups
     {
@@ -41,7 +42,7 @@ public abstract class Command
 /// <param name="DisplayName">Displayed name of the command.</param>
 /// <param name="Summary">Summary of a command's function.</param>
 /// <param name="Description">Detailed description shown at the end of a full help message.</param>
-public abstract record CommandInfo(
+public record CommandInfo(
     string? Trigger = null, bool Togglable = true, bool Listed = true,
     string DisplayName = "", string Summary = "", string? Description = null
 );

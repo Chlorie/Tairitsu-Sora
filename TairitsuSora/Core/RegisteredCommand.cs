@@ -1,4 +1,10 @@
-﻿using YukariToolBox.LightLog;
+﻿using System.Reflection;
+using System.Text;
+using Sora.Entities;
+using Sora.Entities.Segment.DataModel;
+using Sora.EventArgs.SoraEvent;
+using TairitsuSora.Utils;
+using YukariToolBox.LightLog;
 
 namespace TairitsuSora.Core;
 
@@ -8,16 +14,77 @@ public class RegisteredCommand
     public string Name { get; }
     public CommandInfo Info { get; }
 
+    public RegisteredCommand(Command cmd)
+    {
+        Command = cmd;
+        Name = cmd.GetType().FullName!;
+        Info = cmd.Info;
+        _cmdMethods = RegisterCommandMethods(cmd)
+            .OrderBy(m => m.Method.SignatureDescription).ToArray();
+    }
+
     public async ValueTask InitializeAsync()
     {
         await Command.InitializeAsync();
         Log.Info(Application.AppName, $"Initialized command {Name}");
     }
 
-    public RegisteredCommand(Command cmd)
+    public async ValueTask ExecuteAsync()
     {
-        Command = cmd;
-        Name = cmd.GetType().FullName!;
-        Info = cmd.Info;
+        ValueTask Callback(string type, GroupMessageEventArgs eventArgs)
+            => OnGroupMessage(eventArgs).IgnoreException();
+
+        Application.Service.Event.OnGroupMessage += Callback;
+        try { await Command.ExecuteAsync(); }
+        finally { Application.Service.Event.OnGroupMessage -= Callback; }
+    }
+
+    private record MessageHandlerInfo(CommandMethod Method, MessageHandlerAttribute HandlerAttr);
+    private MessageHandlerInfo[] _cmdMethods;
+    private string? _trigger;
+
+    private string Trigger => _trigger ??= $"{Command.TriggerPrefix}{Info.Trigger}";
+
+    private static List<MessageHandlerInfo> RegisterCommandMethods(Command cmd)
+    {
+        List<MessageHandlerInfo> res = new();
+        foreach (var method in cmd.GetType().GetMethods())
+            if (method.GetCustomAttribute<MessageHandlerAttribute>() is { } attr)
+                res.Add(new MessageHandlerInfo(CommandMethod.Create(attr.Signature, method), attr));
+        return res;
+    }
+
+    private async ValueTask OnGroupMessage(GroupMessageEventArgs eventArgs)
+    {
+        if (_cmdMethods.Length == 0 || Info.Trigger is null) return;
+        MessageBody msg = eventArgs.Message.MessageBody;
+        var (trigger, remaining) = msg.SeparateFirstToken();
+        if (trigger.Data is not TextSegment { Content: var text } || text != Trigger) return;
+        if (!Command.IsEnabledInGroup(eventArgs.SourceGroup.Id)) return;
+
+        int maxMatch = -1;
+        var matchFailures = new CommandMatchFailure?[_cmdMethods.Length];
+        for (int i = 0; i < _cmdMethods.Length; i++)
+        {
+            var match = _cmdMethods[i].Method.TryMatch(remaining);
+            if (match.HoldsResult)
+            {
+                var args = match.Result;
+                await _cmdMethods[i].Method.Invoke(Command, args, eventArgs);
+                return;
+            }
+            matchFailures[i] = match.Error;
+            maxMatch = Math.Max(maxMatch, match.Error.MatchedParameterCount);
+        }
+        StringBuilder sb = new("未能匹配该指令");
+        for (int i = 0; i < _cmdMethods.Length; i++)
+        {
+            if (matchFailures[i] is not { } failure) continue;
+            sb.Append($"\n{Command.TriggerPrefix}{Info.Trigger}");
+            string signature = _cmdMethods[i].Method.SignatureDescription;
+            if (signature.Length > 0) sb.Append(' ').Append(signature);
+            sb.Append($":\n    {failure.Message}");
+        }
+        await eventArgs.Reply(sb.ToString());
     }
 }

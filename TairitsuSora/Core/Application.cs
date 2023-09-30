@@ -1,4 +1,5 @@
-﻿using System.Text.Json.Nodes;
+﻿using System.Reflection;
+using System.Text.Json.Nodes;
 using Sora;
 using Sora.Entities.Base;
 using Sora.Interfaces;
@@ -21,6 +22,36 @@ public class Application
     public CancellationToken CancellationToken => _cancelSrc.Token;
     public IReadOnlyCollection<RegisteredCommand> Commands => _cmds.Values;
 
+    public void RegisterCommand(Command cmd)
+    {
+        string cmdName = cmd.GetType().FullName!;
+        if (_cmds.ContainsKey(cmdName))
+        {
+            Log.Warning(AppName,
+                $"Command class {cmdName} is already registered, ignoring this instance");
+            return;
+        }
+        _cmds[cmdName] = new RegisteredCommand(cmd);
+    }
+
+    public void RegisterCommand<TCommand>() where TCommand : Command, new() => RegisterCommand(new TCommand());
+
+    public void RegisterCommandsInAssembly(Assembly assembly)
+    {
+        foreach (Type type in assembly.GetTypes())
+        {
+            if (type.GetCustomAttribute<RegisterCommandAttribute>() is null) continue;
+            if (!type.IsSubclassOf(typeof(Command)))
+                throw new ArgumentException(
+                    $"A class with {nameof(RegisterCommandAttribute)} is not derived from {nameof(Command)}");
+            if (type.GetConstructor(Array.Empty<Type>()) is not { } ctorInfo)
+                throw new ArgumentException(
+                    $"A command class marked with {nameof(RegisterCommandAttribute)} is not " +
+                    $"default constructible, thus it is skipped");
+            RegisterCommand((Command)ctorInfo.Invoke(null));
+        }
+    }
+
     public async ValueTask RunAsync()
     {
         _service.ConnManager.OnOpenConnectionAsync += (id, _) =>
@@ -33,7 +64,7 @@ public class Application
         List<ValueTask> tasks = new() { WaitForStopAsync(), SaveConfigAsync() };
         // TODO: also await message commands
         tasks.AddRange(_cmds.Values.Select(
-            static cmd => cmd.Command.ExecuteAsync().IgnoreCancellation()));
+            static cmd => cmd.ExecuteAsync().IgnoreCancellation()));
         await tasks.WhenAll();
         Log.Info(AppName, "Application stopped");
         await _service.StopService();
@@ -103,12 +134,17 @@ public class Application
                 _cmds.Remove(cmdName);
     }
 
-    private ValueTask WaitForStopAsync()
+    private async ValueTask WaitForStopAsync()
     {
-        while (Console.ReadLine() != StopCommand) { }
-        Log.Info(AppName, "Received stop signal, trying to stop all commands");
-        _cancelSrc.Cancel();
-        return ValueTask.CompletedTask;
+        void Body()
+        {
+            while (Console.ReadLine() != StopCommand) { }
+            Log.Info(AppName, "Received stop signal, trying to stop all commands");
+            _cancelSrc.Cancel();
+        }
+
+        // Use Task.Run to move the blocking ReadLine() onto another thread
+        await Task.Run(Body, CancellationToken);
     }
 
     private async ValueTask SaveConfigAsync()
@@ -129,7 +165,8 @@ public class Application
         async ValueTask SyncAndSaveConfig()
         {
             foreach (var (cmdName, cmd) in _cmds)
-                _config.CommandEnabledGroups[cmdName] = cmd.Command.EnabledGroups;
+                if (cmd.Info.Togglable)
+                    _config.CommandEnabledGroups[cmdName] = new HashSet<long>(cmd.Command.EnabledGroups);
             var configs = await _cmds.Select(GetCommandConfig).WhenAll();
             foreach (var (cmdName, config) in configs)
             {
