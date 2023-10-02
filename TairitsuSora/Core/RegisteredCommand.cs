@@ -13,6 +13,7 @@ public class RegisteredCommand
     public Command Command { get; }
     public string Name { get; }
     public CommandInfo Info { get; }
+    public string HelpMessage => _helpMsg ??= GenerateHelpMessage();
 
     public RegisteredCommand(Command cmd)
     {
@@ -42,6 +43,7 @@ public class RegisteredCommand
     private record MessageHandlerInfo(CommandMethod Method, MessageHandlerAttribute HandlerAttr);
     private MessageHandlerInfo[] _cmdMethods;
     private string? _trigger;
+    private string? _helpMsg;
 
     private string Trigger => _trigger ??= $"{Command.TriggerPrefix}{Info.Trigger}";
 
@@ -60,7 +62,7 @@ public class RegisteredCommand
         MessageBody msg = eventArgs.Message.MessageBody;
         var (trigger, remaining) = msg.SeparateFirstToken();
         if (trigger.Data is not TextSegment { Content: var text } || text != Trigger) return;
-        if (!Command.IsEnabledInGroup(eventArgs.SourceGroup.Id)) return;
+        if (Command.Info.Togglable && !Command.IsEnabledInGroup(eventArgs.SourceGroup.Id)) return;
 
         int maxMatch = -1;
         var matchFailures = new CommandMatchFailure?[_cmdMethods.Length];
@@ -79,12 +81,29 @@ public class RegisteredCommand
         StringBuilder sb = new("未能匹配该指令");
         for (int i = 0; i < _cmdMethods.Length; i++)
         {
-            if (matchFailures[i] is not { } failure) continue;
+            if (matchFailures[i] is not { } failure || failure.MatchedParameterCount < maxMatch) continue;
             sb.Append($"\n{Command.TriggerPrefix}{Info.Trigger}");
             string signature = _cmdMethods[i].Method.SignatureDescription;
             if (signature.Length > 0) sb.Append(' ').Append(signature);
             sb.Append($":\n    {failure.Message}");
         }
-        await eventArgs.Reply(sb.ToString());
+        await eventArgs.QuoteReply(sb.ToString());
+    }
+
+    private string GenerateHelpMessage()
+    {
+        StringBuilder sb = new($"{Info.DisplayName ?? Command.GetType().Name}");
+        foreach (var method in _cmdMethods)
+        {
+            sb.Append('\n').Append(Command.TriggerPrefix).Append(Info.Trigger);
+            string sig = method.Method.SignatureDescription;
+            if (sig != "")
+                sb.Append(' ').Append(sig);
+            if (method.HandlerAttr.Description is { } desc)
+                sb.Append(":\n    ").Append(desc);
+        }
+        if (Command.Info.Description is { } cmdDesc)
+            sb.Append('\n').Append(cmdDesc);
+        return sb.ToString();
     }
 }

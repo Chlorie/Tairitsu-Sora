@@ -1,5 +1,6 @@
 ﻿using Sora.Entities;
 using Sora.Entities.Segment;
+using Sora.Entities.Segment.DataModel;
 using TairitsuSora.Utils;
 
 namespace TairitsuSora.Core;
@@ -47,4 +48,45 @@ public class FullStringParameterMatcher : IParameterMatcher
         msg.RemoveAt(0);
         return new FullString(text);
     }
+}
+
+public class TimeSpanParameterMatcher : TokenParameterMatcher
+{
+    public override Type ParameterType => typeof(TimeSpan);
+    public override string ShownTypeName => "TimeSpan";
+
+    protected override ResultType<object?>? TryMatchToken(SoraSegment segment)
+    {
+        string? text = segment.GetText();
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        int idx = text.LastIndexOfAny("+-.e0123456789".ToCharArray()) + 1;
+        if (idx == 0) return null;
+        if (!float.TryParse(text[..idx], out float count)) return null;
+        try
+        {
+            TimeSpan? res = text[idx..] switch
+            {
+                "ms" => TimeSpan.FromMilliseconds(count),
+                "s" => TimeSpan.FromSeconds(count),
+                "min" => TimeSpan.FromMinutes(count),
+                "h" => TimeSpan.FromHours(count),
+                "d" => TimeSpan.FromDays(count),
+                _ => null
+            };
+            return res is not null ? ((object?)res).AsResult() : null;
+        }
+        catch (OverflowException)
+        {
+            return null;
+        }
+    }
+}
+
+public class AtParameterMatcher : TokenParameterMatcher
+{
+    public override Type ParameterType => typeof(AtSegment);
+    public override string ShownTypeName => "At";
+
+    protected override ResultType<object?>? TryMatchToken(SoraSegment segment)
+        => segment.Data is AtSegment at && at.Target != "all" ? ((object?)at).AsResult() : null;
 }

@@ -55,7 +55,6 @@ public class CommandMethod
 
     private interface ICommandParameterInfo
     {
-        string? ParameterName { get; }
         int? Index { get; }
         string Description { get; }
         Either<object?, string> TryMatch(ref MessageBody msg);
@@ -63,7 +62,6 @@ public class CommandMethod
 
     private class KeywordCommandParameter : ICommandParameterInfo
     {
-        public string? ParameterName => null;
         public int? Index => null;
         // ReSharper disable once ConvertToAutoPropertyWhenPossible
         public string Description => _keyword;
@@ -84,22 +82,22 @@ public class CommandMethod
 
     private class SingleCommandParameter : ICommandParameterInfo
     {
-        public string? ParameterName { get; }
         public int? Index { get; }
 
-        public string Description => _defaultValue is null
-            ? $"[{ParameterName}: {ShownTypeName}]"
-            : $"[{ParameterName}: {ShownTypeName} = {_defaultValue}]";
+        public string Description => _shownDefaultValue is null
+            ? $"[{_paramName}: {ShownTypeName}]"
+            : $"[{_paramName}: {ShownTypeName} = {_shownDefaultValue}]";
 
         public SingleCommandParameter(string paramName, int index, Type type,
             IReadOnlyDictionary<Type, IParameterMatcher> paramMatchers,
-            bool nullable = false, object? defaultValue = null)
+            bool nullable = false, object? defaultValue = null, string? shownDefaultValue = null)
         {
             _matcher = GetMatcherFor(type, paramMatchers);
-            ParameterName = paramName;
+            _paramName = paramName;
             Index = index;
             _nullable = nullable;
             _defaultValue = defaultValue;
+            _shownDefaultValue = shownDefaultValue ?? defaultValue;
         }
 
         public Either<object?, string> TryMatch(ref MessageBody msg)
@@ -107,27 +105,32 @@ public class CommandMethod
             var match = _matcher.TryMatch(ref msg);
             if (match.HoldsResult) return match.Result;
             if (_nullable || _defaultValue is not null) return _defaultValue;
-            return $"无法将 {msg} 解析为参数 {ParameterName}: {_matcher.ShownTypeName}".AsError();
+            return (msg.IsWhitespace()
+                ? $"缺失参数 {_paramName}: {_matcher.ShownTypeName}"
+                : $"无法将 {match.Error.Stringify()} 解析为参数 {_paramName}: {_matcher.ShownTypeName}")
+                .AsError();
         }
 
         private IParameterMatcher _matcher;
+        private string _paramName;
         private bool _nullable;
         private object? _defaultValue;
+        private object? _shownDefaultValue;
 
-        private string ShownTypeName => $"{_matcher.ShownTypeName}{(_nullable ? "?" : "")}";
+        private string ShownTypeName
+            => $"{_matcher.ShownTypeName}{(_nullable && _shownDefaultValue is null ? "?" : "")}";
     }
 
     private class ArrayCommandParameter : ICommandParameterInfo
     {
-        public string? ParameterName { get; }
         public int? Index { get; }
-        public string Description => $"[{ParameterName}: {_matcher.ShownTypeName}...]";
+        public string Description => $"[{_paramName}: {_matcher.ShownTypeName}...]";
 
         public ArrayCommandParameter(string paramName, int index, Type type,
             IReadOnlyDictionary<Type, IParameterMatcher> paramMatchers)
         {
             _matcher = GetMatcherFor(type, paramMatchers);
-            ParameterName = paramName;
+            _paramName = paramName;
             Index = index;
         }
 
@@ -146,6 +149,7 @@ public class CommandMethod
         }
 
         private IParameterMatcher _matcher;
+        private string _paramName;
     }
 
     private static Dictionary<Type, GroupMessageHandlerResultConverter> _typedConverters;
@@ -202,6 +206,8 @@ public class CommandMethod
         AddMatcher(new FloatParameterMatcher());
         AddMatcher(new StringParameterMatcher());
         AddMatcher(new FullStringParameterMatcher());
+        AddMatcher(new TimeSpanParameterMatcher());
+        AddMatcher(new AtParameterMatcher());
         return res;
     }
 
@@ -279,7 +285,8 @@ public class CommandMethod
         else
             nullable = param.IsNullableRef();
         return new SingleCommandParameter(param.Name!, index, elemType, _paramMatchers, nullable,
-            param.HasDefaultValue ? param.DefaultValue : null);
+            param.HasDefaultValue ? param.DefaultValue : null,
+            param.GetCustomAttribute<ShowDefaultValueAsAttribute>()?.Value);
     }
 
     private ICommandParameterInfo? CheckArrayCmdParamInfo(ParameterInfo param, int index)

@@ -25,5 +25,5 @@ public class AsyncLock
         private bool _disposed = false;
     }
 
-    private SemaphoreSlim _semaphore = new(1, 1);
+    private SemaphoreSlim _semaphore = new(1);
 }

@@ -9,18 +9,25 @@ using YukariToolBox.LightLog;
 
 namespace TairitsuSora.Core;
 
-public class Application
+public class Application : IDisposable
 {
     public const string AppName = "Tairitsu";
 
     public static Application Instance => _instance ?? new Application();
     public static ISoraService Service => Instance._service;
     public static SoraApi Api => Instance._api!;
+    public static EventChannel EventChannel => Instance._eventChannel;
 
     public long SelfId => _config.BotId;
     public IReadOnlyList<long> Admins => _config.Admins;
     public CancellationToken CancellationToken => _cancelSrc.Token;
     public IReadOnlyCollection<RegisteredCommand> Commands => _cmds.Values;
+
+    public void Dispose()
+    {
+        _cancelSrc.Dispose();
+        _eventChannel.Dispose();
+    }
 
     public void RegisterCommand(Command cmd)
     {
@@ -77,6 +84,7 @@ public class Application
     private BotConfig _config;
     private ISoraService _service;
     private volatile SoraApi? _api;
+    private EventChannel _eventChannel;
     private CancellationTokenSource _cancelSrc = new();
     private Dictionary<string, RegisteredCommand> _cmds = new();
 
@@ -93,6 +101,7 @@ public class Application
             Host = _config.OneBotConfig.Host,
             Port = _config.OneBotConfig.Port
         });
+        _eventChannel = new EventChannel(_service);
     }
 
     private async ValueTask InitializeCommands()

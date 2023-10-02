@@ -1,18 +1,56 @@
 ﻿using Sora.Entities;
+using Sora.Entities.Info;
 using Sora.Entities.Segment;
 using Sora.Entities.Segment.DataModel;
 using Sora.Enumeration;
+using Sora.Enumeration.EventParamsType;
 using Sora.EventArgs.SoraEvent;
+using TairitsuSora.Core;
 
 namespace TairitsuSora.Utils;
 
 public static class MessageExtensions
 {
+    public static string Stringify(this SoraSegment segment) => segment.MessageType switch
+    {
+        SegmentType.Unknown => "[未知]",
+        SegmentType.Ignore => "[忽略]",
+        SegmentType.Text => segment.GetText()!,
+        SegmentType.Face => "[表情]",
+        SegmentType.Image => "[图片]",
+        SegmentType.Record => "[语音]",
+        SegmentType.Video => "[视频]",
+        SegmentType.Music => "[音乐分享]",
+        SegmentType.At => "@" + ((AtSegment)segment.Data).Target,
+        SegmentType.Share => "[链接分享]",
+        SegmentType.Reply => "[引用回复]",
+        SegmentType.Forward => "[合并转发]",
+        SegmentType.Poke => "[戳一戳]",
+        SegmentType.Xml => "[XML 消息]",
+        SegmentType.Json => "[JSON 消息]",
+        SegmentType.RedBag => "[红包]",
+        SegmentType.CardImage => "[大图]",
+        SegmentType.TTS => "[语音转文字]",
+        SegmentType.RPS => "[猜拳]",
+        _ => throw new ArgumentOutOfRangeException()
+    };
+
+    public static string Stringify(this MessageBody msg) => string.Concat(msg.Select(Stringify));
+
     public static string? GetText(this SoraSegment segment)
         => segment.MessageType != SegmentType.Text ? null : ((TextSegment)segment.Data).Content;
 
+    public static string? GetIfOnlyText(this MessageBody msg)
+        => msg.Count switch { 0 => "", 1 => msg[0].GetText(), _ => null };
+
     public static bool IsEmpty(this MessageBody msg)
         => msg.Count == 0 || (msg.Count == 1 && msg[0].Data is TextSegment { Content: "" });
+
+    public static bool IsWhitespace(this MessageBody msg)
+        => msg.Count == 0 ||
+           (msg.Count == 1 &&
+            msg[0].Data is TextSegment { Content: var content }
+            && string.IsNullOrWhiteSpace(content));
 
     public static MessageBody TrimStart(this MessageBody msg)
     {
@@ -55,7 +93,7 @@ public static class MessageExtensions
         {
             SoraSegment token = res[0];
             res.RemoveAt(0);
-            while (res[0].GetText() is { } text && string.IsNullOrWhiteSpace(text))
+            while (res.Count > 0 && res[0].GetText() is { } text && string.IsNullOrWhiteSpace(text))
                 res.RemoveAt(0);
             return (token, res);
         }
@@ -74,7 +112,20 @@ public static class MessageExtensions
         return msg;
     }
 
+    public static MessageBody Record(this MessageBody msg, byte[] bytes)
+    {
+        using MemoryStream stream = new(bytes);
+        msg.Add(SoraSegment.Record(stream.StreamToBase64()));
+        return msg;
+    }
+
     public static ValueTask<(ApiStatus apiStatus, int messageId)> QuoteReply(
         this GroupMessageEventArgs eventArgs, MessageBody msg)
         => eventArgs.Reply(SoraSegment.Reply(eventArgs.Message.MessageId) + msg);
+
+    public static bool FromSameMember(this GroupMessageEventArgs self, GroupMessageEventArgs other)
+        => self.SourceGroup.Id == other.SourceGroup.Id && self.SenderInfo.UserId == other.SenderInfo.UserId;
+
+    public static bool IsAdmin(this GroupSenderInfo sender)
+        => sender.Role >= MemberRoleType.Admin || Application.Instance.Admins.Contains(sender.UserId);
 }

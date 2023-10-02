@@ -10,7 +10,6 @@ public class Ping : Command
         Trigger = "ping",
         Togglable = false,
         Listed = true,
-        DisplayName = "Ping",
         Summary = "在线状态测试"
     };
 

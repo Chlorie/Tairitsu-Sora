@@ -39,10 +39,10 @@ public abstract class Command
 /// <param name="Trigger">Command trigger. Set to null for non-triggerable commands.</param>
 /// <param name="Togglable">Whether the command is togglable by admins.</param>
 /// <param name="Listed">Whether the command is listed in the help message.</param>
-/// <param name="DisplayName">Displayed name of the command.</param>
+/// <param name="DisplayName">Displayed name of the command, the class name will be used if it is null.</param>
 /// <param name="Summary">Summary of a command's function.</param>
 /// <param name="Description">Detailed description shown at the end of a full help message.</param>
 public record CommandInfo(
     string? Trigger = null, bool Togglable = true, bool Listed = true,
-    string DisplayName = "", string Summary = "", string? Description = null
+    string? DisplayName = null, string Summary = "", string? Description = null
 );
