@@ -1,4 +1,5 @@
-﻿using TairitsuSora.Core;
+﻿using System.Diagnostics;
+using TairitsuSora.Core;
 using YukariToolBox.LightLog;
 
 namespace TairitsuSora.Utils;
@@ -64,5 +65,26 @@ public static class AsyncExtensions
     {
         try { while (true) await taskFactory(); }
         catch (OperationCanceledException) { }
+    }
+
+    public static ValueTask<Process> RunWithTimeoutAsync(this ProcessStartInfo procInfo, TimeSpan timeout)
+        => procInfo.RunWithTimeoutAsync(timeout, CancellationToken.None);
+
+    public static async ValueTask<Process> RunWithTimeoutAsync(
+        this ProcessStartInfo procInfo, TimeSpan timeout, CancellationToken token)
+    {
+        var proc = Process.Start(procInfo)!;
+        using var src = CancellationTokenSource.CreateLinkedTokenSource(token);
+        src.CancelAfter(timeout);
+        try
+        {
+            await proc.WaitForExitAsync(src.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            proc.Kill();
+            throw;
+        }
+        return proc;
     }
 }

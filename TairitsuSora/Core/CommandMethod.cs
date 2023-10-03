@@ -8,16 +8,14 @@ namespace TairitsuSora.Core;
 
 public class CommandMethod
 {
-    public static CommandMethod Create(string signature, MethodInfo method)
-        => Create(signature, method, _defaultMatchers);
+    public MessageHandlerAttribute HandlerAttribute { get; }
 
-    public static CommandMethod Create(
-        string signature, MethodInfo method, IReadOnlyDictionary<Type, IParameterMatcher> paramMatchers)
-    {
-        CommandMethod res = new(method, paramMatchers);
-        res.InitializeParamInfos(signature);
-        return res;
-    }
+    public static CommandMethod Create(MethodInfo method, MessageHandlerAttribute attr)
+        => Create(method, attr, _defaultMatchers);
+
+    public static CommandMethod Create(MethodInfo method, MessageHandlerAttribute attr,
+        IReadOnlyDictionary<Type, IParameterMatcher> paramMatchers)
+        => new(method, attr, paramMatchers);
 
     /// <summary>
     /// Try to match a message against this method, and construct the parameters
@@ -41,10 +39,15 @@ public class CommandMethod
         return msg.IsEmpty() ? parameters : new CommandMatchFailure(_paramInfos.Length, "指令结尾有多余的参数").AsError();
     }
 
-    public ValueTask Invoke(Command cmd, object?[] args, GroupMessageEventArgs eventArgs)
+    public async ValueTask Invoke(Command cmd, object?[] args, GroupMessageEventArgs eventArgs)
     {
         if (_acceptsEventArgs) args[0] = eventArgs;
-        return _resultConverter(_method, cmd, args, eventArgs);
+        try { await _resultConverter(_method, cmd, args, eventArgs); }
+        catch (Exception ex)
+        {
+            if (HandlerAttribute.ReplyException) await eventArgs.QuoteReply(ex.Message);
+            else throw;
+        }
     }
 
     public string SignatureDescription
@@ -154,9 +157,9 @@ public class CommandMethod
 
     private static Dictionary<Type, GroupMessageHandlerResultConverter> _typedConverters;
     private static Dictionary<Type, IParameterMatcher> _defaultMatchers;
+    private MethodInfo _method;
     private bool _acceptsEventArgs;
     private int _methodParamCount;
-    private MethodInfo _method;
     private GroupMessageHandlerResultConverter _resultConverter;
     private IReadOnlyDictionary<Type, IParameterMatcher> _paramMatchers;
     private ICommandParameterInfo[] _paramInfos = Array.Empty<ICommandParameterInfo>();
@@ -219,16 +222,19 @@ public class CommandMethod
         return proc;
     }
 
-    private CommandMethod(MethodInfo method, IReadOnlyDictionary<Type, IParameterMatcher> paramMatchers)
+    private CommandMethod(MethodInfo method, MessageHandlerAttribute attr,
+        IReadOnlyDictionary<Type, IParameterMatcher> paramMatchers)
     {
         _method = method;
+        HandlerAttribute = attr;
         if (!_typedConverters.TryGetValue(method.ReturnType, out var conv))
             throw new ArgumentException($"Invalid return type {method.ReturnType} for a message handler");
         _resultConverter = conv;
         _paramMatchers = paramMatchers;
+        InitializeParamInfos();
     }
 
-    private void InitializeParamInfos(string signature)
+    private void InitializeParamInfos()
     {
         ReadOnlySpan<ParameterInfo> parameters = _method.GetParameters();
         _methodParamCount = parameters.Length;
@@ -237,7 +243,7 @@ public class CommandMethod
             _acceptsEventArgs = true;
             parameters = parameters[1..];
         }
-        string[] signatureParts = signature.SplitByWhitespaces();
+        string[] signatureParts = HandlerAttribute.Signature.SplitByWhitespaces();
         var paramsCovered = new bool[parameters.Length];
         _paramInfos = new ICommandParameterInfo[signatureParts.Length];
         for (int i = 0; i < _paramInfos.Length; i++)

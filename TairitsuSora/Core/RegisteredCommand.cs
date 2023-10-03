@@ -21,7 +21,7 @@ public class RegisteredCommand
         Name = cmd.GetType().FullName!;
         Info = cmd.Info;
         _cmdMethods = RegisterCommandMethods(cmd)
-            .OrderBy(m => m.Method.SignatureDescription).ToArray();
+            .OrderBy(m => m.SignatureDescription).ToArray();
     }
 
     public async ValueTask InitializeAsync()
@@ -40,19 +40,18 @@ public class RegisteredCommand
         finally { Application.Service.Event.OnGroupMessage -= Callback; }
     }
 
-    private record MessageHandlerInfo(CommandMethod Method, MessageHandlerAttribute HandlerAttr);
-    private MessageHandlerInfo[] _cmdMethods;
+    private CommandMethod[] _cmdMethods;
     private string? _trigger;
     private string? _helpMsg;
 
     private string Trigger => _trigger ??= $"{Command.TriggerPrefix}{Info.Trigger}";
 
-    private static List<MessageHandlerInfo> RegisterCommandMethods(Command cmd)
+    private static List<CommandMethod> RegisterCommandMethods(Command cmd)
     {
-        List<MessageHandlerInfo> res = new();
+        List<CommandMethod> res = new();
         foreach (var method in cmd.GetType().GetMethods())
             if (method.GetCustomAttribute<MessageHandlerAttribute>() is { } attr)
-                res.Add(new MessageHandlerInfo(CommandMethod.Create(attr.Signature, method), attr));
+                res.Add(CommandMethod.Create(method, attr));
         return res;
     }
 
@@ -68,11 +67,11 @@ public class RegisteredCommand
         var matchFailures = new CommandMatchFailure?[_cmdMethods.Length];
         for (int i = 0; i < _cmdMethods.Length; i++)
         {
-            var match = _cmdMethods[i].Method.TryMatch(remaining);
+            var match = _cmdMethods[i].TryMatch(remaining);
             if (match.HoldsResult)
             {
                 var args = match.Result;
-                await _cmdMethods[i].Method.Invoke(Command, args, eventArgs);
+                await _cmdMethods[i].Invoke(Command, args, eventArgs);
                 return;
             }
             matchFailures[i] = match.Error;
@@ -83,7 +82,7 @@ public class RegisteredCommand
         {
             if (matchFailures[i] is not { } failure || failure.MatchedParameterCount < maxMatch) continue;
             sb.Append($"\n{Command.TriggerPrefix}{Info.Trigger}");
-            string signature = _cmdMethods[i].Method.SignatureDescription;
+            string signature = _cmdMethods[i].SignatureDescription;
             if (signature.Length > 0) sb.Append(' ').Append(signature);
             sb.Append($":\n    {failure.Message}");
         }
@@ -96,10 +95,10 @@ public class RegisteredCommand
         foreach (var method in _cmdMethods)
         {
             sb.Append('\n').Append(Command.TriggerPrefix).Append(Info.Trigger);
-            string sig = method.Method.SignatureDescription;
+            string sig = method.SignatureDescription;
             if (sig != "")
                 sb.Append(' ').Append(sig);
-            if (method.HandlerAttr.Description is { } desc)
+            if (method.HandlerAttribute.Description is { } desc)
                 sb.Append(":\n    ").Append(desc);
         }
         if (Command.Info.Description is { } cmdDesc)

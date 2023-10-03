@@ -18,6 +18,13 @@ public class PianoSynth
         return PcmToWav(instance.FromEventsImpl(events, sampleLength));
     }
 
+    public static async ValueTask<byte[]> FromMidi(MidiFile midi)
+    {
+        PianoSynth instance = Instance;
+        using var lck = await instance._lock.LockAsync();
+        return PcmToWav(instance.FromMidiImpl(midi));
+    }
+
     private static PianoSynth? _instance;
     private static PianoSynth Instance => _instance ??= new PianoSynth();
     private AsyncLock _lock = new();
@@ -43,6 +50,17 @@ public class PianoSynth
                 Synth.NoteOff(0, note.Pitch);
         }
         Synth.RenderMonoInt16(samples[lastEventPos..]);
+        Synth.Reset();
+        return buffer;
+    }
+
+    private byte[] FromMidiImpl(MidiFile midi)
+    {
+        MidiFileSequencer sequencer = new(Synth);
+        sequencer.Play(midi, false);
+        byte[] buffer = new byte[(int)((1 + midi.Length.TotalSeconds) * SampleRate) * sizeof(short)];
+        Span<short> samples = MemoryMarshal.Cast<byte, short>(buffer.AsSpan());
+        sequencer.RenderMonoInt16(samples);
         Synth.Reset();
         return buffer;
     }

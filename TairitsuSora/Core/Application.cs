@@ -78,6 +78,7 @@ public class Application : IDisposable
     }
 
     private const string ConfigPath = "data/config.json";
+    private const string TempPath = "temp";
     private const string StopCommand = "/stop";
     private static Application? _instance;
 
@@ -93,6 +94,7 @@ public class Application : IDisposable
         if (_instance is not null)
             throw new InvalidOperationException("There should not be more than one application instance");
         _instance = this;
+        Directory.CreateDirectory(TempPath);
         _config = BotConfig.Load(ConfigPath);
         Log.Info(AppName, $"Loaded config from {ConfigPath}");
         _service = SoraServiceFactory.CreateService(new ClientConfig
