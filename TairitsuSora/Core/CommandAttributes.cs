@@ -4,7 +4,7 @@ namespace TairitsuSora.Core;
 
 [AttributeUsage(AttributeTargets.Class, Inherited = false)]
 [MeansImplicitUse]
-public class RegisterCommandAttribute : Attribute { }
+public class RegisterCommandAttribute : Attribute;
 
 [AttributeUsage(AttributeTargets.Method)]
 [MeansImplicitUse]
@@ -21,8 +21,7 @@ public class MessageHandlerAttribute : Attribute
 }
 
 [AttributeUsage(AttributeTargets.Parameter)]
-public class ShowDefaultValueAsAttribute : Attribute
+public class ShowDefaultValueAsAttribute(string value) : Attribute
 {
-    public string Value { get; }
-    public ShowDefaultValueAsAttribute(string value) => Value = value;
+    public string Value { get; } = value;
 }

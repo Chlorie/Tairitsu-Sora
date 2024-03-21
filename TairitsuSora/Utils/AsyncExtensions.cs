@@ -26,6 +26,9 @@ public static class AsyncExtensions
     public static ValueTask IgnoreCancellation(this ValueTask task)
         => task.IgnoreException<OperationCanceledException>(false);
 
+    public static ValueTask WaitUntilCanceled(this CancellationToken token)
+        => Task.Delay(-1, token).AsValueTask().IgnoreCancellation();
+
     public static async ValueTask AsValueTask(this Task task) => await task.ConfigureAwait(false);
 
     public static async ValueTask WhenAll(this IEnumerable<ValueTask> tasks)
@@ -36,7 +39,7 @@ public static class AsyncExtensions
         foreach (var task in list)
         {
             try { await task.ConfigureAwait(false); }
-            catch (Exception ex) { (exceptions ??= new List<Exception>()).Add(ex); }
+            catch (Exception ex) { (exceptions ??= []).Add(ex); }
         }
         if (exceptions != null)
             throw new AggregateException(exceptions);
@@ -45,13 +48,13 @@ public static class AsyncExtensions
     public static async ValueTask<TRes[]> WhenAll<TRes>(this IEnumerable<ValueTask<TRes>> tasks)
     {
         var list = tasks.ToReadOnlyList();
-        if (list.Count == 0) return Array.Empty<TRes>();
+        if (list.Count == 0) return [];
         TRes[] result = new TRes[list.Count];
         List<Exception>? exceptions = null;
         for (int i = 0; i < list.Count; i++)
         {
             try { result[i] = await list[i].ConfigureAwait(false); }
-            catch (Exception ex) { (exceptions ??= new List<Exception>()).Add(ex); }
+            catch (Exception ex) { (exceptions ??= []).Add(ex); }
         }
         if (exceptions != null)
             throw new AggregateException(exceptions);
@@ -67,15 +70,12 @@ public static class AsyncExtensions
         catch (OperationCanceledException) { }
     }
 
-    public static ValueTask<Process> RunWithTimeoutAsync(this ProcessStartInfo procInfo, TimeSpan timeout)
-        => procInfo.RunWithTimeoutAsync(timeout, CancellationToken.None);
-
-    public static async ValueTask<Process> RunWithTimeoutAsync(
-        this ProcessStartInfo procInfo, TimeSpan timeout, CancellationToken token)
+    public static async ValueTask<Process> RunAsync(
+        this ProcessStartInfo procInfo, TimeSpan? timeout = null, CancellationToken token = default)
     {
         var proc = Process.Start(procInfo)!;
         using var src = CancellationTokenSource.CreateLinkedTokenSource(token);
-        src.CancelAfter(timeout);
+        src.CancelAfter(timeout ?? Timeout.InfiniteTimeSpan);
         try
         {
             await proc.WaitForExitAsync(src.Token);

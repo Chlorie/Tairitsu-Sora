@@ -26,7 +26,7 @@ public class Mahjong : Command
             RedirectStandardOutput = true,
             ArgumentList = { hand }
         };
-        var proc = await procInfo.RunWithTimeoutAsync(
+        var proc = await procInfo.RunAsync(
             TimeSpan.FromMinutes(1), Application.Instance.CancellationToken);
         return await proc.StandardOutput.ReadToEndAsync();
     }

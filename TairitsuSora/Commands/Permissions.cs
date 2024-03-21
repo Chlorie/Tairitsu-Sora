@@ -17,8 +17,8 @@ public class Permissions : Command
     [MessageHandler(Signature = "list", Description = "列出本群中启用的指令")]
     public string ListCommands(GroupMessageEventArgs ev) =>
         "本群中启用的指令: " + string.Join(", ", Application.Instance.Commands
-            .Where(cmd => cmd.Info is { Listed: true, Trigger: not null }
-                          && cmd.Command.IsEnabledInGroup(ev.SourceGroup.Id))
+            .Where(cmd => cmd.Info is { Listed: true, Trigger: not null } &&
+                          cmd.Command.IsEnabledInGroup(ev.SourceGroup.Id))
             .Select(cmd => cmd.Info.Trigger));
 
     [MessageHandler(Signature = "enable", Description = "启用所有指令")]

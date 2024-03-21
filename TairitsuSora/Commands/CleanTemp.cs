@@ -13,8 +13,12 @@ public class CleanTemp : Command
 
     public override async ValueTask ExecuteAsync()
     {
-        await Task.Delay(TimeSpan.FromHours(1), Application.Instance.CancellationToken);
-        try { Loop(); } catch { /* ignored */ }
+        while (true)
+        {
+            try { Loop(); } catch { /* ignored */ }
+            await Task.Delay(TimeSpan.FromHours(1), Application.Instance.CancellationToken);
+        }
+        // ReSharper disable once FunctionNeverReturns
     }
 
     private void Loop()

@@ -8,8 +8,7 @@ public abstract class Command
     public const string TriggerPrefix = "/";
     public abstract CommandInfo Info { get; }
     public virtual ValueTask InitializeAsync() => ValueTask.CompletedTask;
-    public virtual ValueTask ExecuteAsync()
-        => Task.Delay(-1, Application.Instance.CancellationToken).AsValueTask().IgnoreCancellation();
+    public virtual ValueTask ExecuteAsync() => Application.Instance.CancellationToken.WaitUntilCanceled();
 
     public IReadOnlySet<long> EnabledGroups
     {
@@ -30,7 +29,7 @@ public abstract class Command
     public virtual ValueTask<JsonNode?> CollectConfigAsync() => ValueTask.FromResult<JsonNode?>(null);
     public virtual ValueTask ApplyConfigAsync(JsonNode config) => ValueTask.CompletedTask;
 
-    private volatile ConcurrentHashSet<long> _enabledGroups = new();
+    private volatile ConcurrentHashSet<long> _enabledGroups = [];
 }
 
 /// <summary>

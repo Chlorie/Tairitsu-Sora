@@ -60,7 +60,7 @@ public class Piano : Command
             RedirectStandardError = true,
             ArgumentList = { hkrFile, lyFile }
         };
-        var proc = await procInfo.RunWithTimeoutAsync(
+        var proc = await procInfo.RunAsync(
             TimeSpan.FromMinutes(1), Application.Instance.CancellationToken);
         var msg = await proc.StandardError.ReadToEndAsync();
         if (msg != "") throw new ArgumentException(msg);
@@ -77,6 +77,6 @@ public class Piano : Command
                 "-fpng", "-dcrop", "-dno-print-pages",
                 "-o", $"temp/{guid}", $"temp/{guid}.ly"
             }
-        }.RunWithTimeoutAsync(
+        }.RunAsync(
             TimeSpan.FromMinutes(1), Application.Instance.CancellationToken);
 }

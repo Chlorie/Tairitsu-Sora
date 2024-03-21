@@ -84,7 +84,7 @@ public class QuickChord : GroupGame
                             CheckAnswer(chord, next.Message.MessageBody.GetIfOnlyText(), inversion, nonChord),
                     time)
                 is not null) continue;
-            MessageBody msg = new();
+            MessageBody msg = [];
             msg.AddText($"最终分数: {i}\nA{i + 1}: {chord.Name}");
             if (await new ChordDrawer().DrawAsync(noteIds) is { } png) msg.Image(png);
             if (tooShort) msg.AddText("\n选个 10 秒以下你不是牛吗，怎么答不出来呢？");
@@ -121,7 +121,7 @@ public class QuickChord : GroupGame
         int lower = 60 - 4 * noteCount, higher = 60 + 4 * noteCount;
 
         NoteValue bass = chord.BassNote;
-        List<int> result = new() { ToOctaveStartingAt(bass, lower) };
+        List<int> result = [ToOctaveStartingAt(bass, lower)];
         lower = result[0];
 
         NoteValue[] notes = chord.ToArray();
@@ -181,7 +181,7 @@ public class QuickChord : GroupGame
             NoteValue.C, NoteValue.D, NoteValue.E,
             NoteValue.F, NoteValue.G, NoteValue.A
         };
-        List<Chord> chords = new();
+        List<Chord> chords = [];
         foreach (NoteValue note in notes)
         {
             chords.Add(note.Maj());
@@ -315,7 +315,7 @@ public class QuickChord : GroupGame
 
         private IEnumerable<(NoteName name, int octaveMod)> GetNoteNames()
         {
-            Chord chord = new();
+            Chord chord = [];
             foreach (int note in _notes) chord.Add((NoteValue)(note % 12));
             chord.BassNote = (NoteValue)(_notes[0] % 12);
             var noteNames = chord.FindNames().noteNames;

@@ -1,4 +1,5 @@
-﻿using Sora.Entities;
+﻿using LanguageExt;
+using Sora.Entities;
 using TairitsuSora.Utils;
 
 namespace TairitsuSora.Core;
@@ -23,5 +24,5 @@ public interface IParameterMatcher
     /// The matched parameter object if the match succeeded, or the part that
     /// failed to match the parameter otherwise.
     /// </returns>
-    Either<object?, MessageBody> TryMatch(ref MessageBody msg);
+    Either<Any, MessageBody> TryMatch(ref MessageBody msg);
 }

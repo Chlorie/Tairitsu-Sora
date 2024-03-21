@@ -69,7 +69,7 @@ public class QuickFactor : GroupGame
     private (BigInteger, SortedDictionary<int, int>) GenerateQA(int difficulty, int maxi)
     {
         BigInteger composite = 1;
-        SortedDictionary<int, int> answer = new();
+        SortedDictionary<int, int> answer = [];
         for (int i = 0; i < difficulty + 3; i++)
         {
             int prime = _primes[Random.Shared.Next(maxi)];
@@ -85,7 +85,7 @@ public class QuickFactor : GroupGame
         string[] components = text.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (components.Length == 1) // Separate into digits
             components = components[0].Select(ch => ch.ToString()).ToArray();
-        SortedDictionary<int, int> parsedAnswer = new();
+        SortedDictionary<int, int> parsedAnswer = [];
         foreach (string comp in components)
         {
             int indexOfP = comp.IndexOf('p');
@@ -110,10 +110,8 @@ public class QuickFactor : GroupGame
 
     private void AddToKey(SortedDictionary<int, int> dict, int key, int increment)
     {
-        if (dict.ContainsKey(key))
+        if (!dict.TryAdd(key, increment))
             dict[key] += increment;
-        else
-            dict.Add(key, increment);
     }
 
     private string FormatAnswer(SortedDictionary<int, int> answer)

@@ -24,11 +24,19 @@ public class EventChannel : IDisposable
         return res;
     }
 
-    private class Waiter
+    public async ValueTask<GroupMessageEventArgs?> WaitNextGroupMessage(
+        Predicate<GroupMessageEventArgs> predicate, CancellationToken token)
+    {
+        Waiter waiter = new(predicate);
+        _waiters.TryAdd(waiter.Id, waiter);
+        var res = await waiter.WaitNextEvent(token);
+        _waiters.Remove(waiter.Id, out _);
+        return res;
+    }
+
+    private class Waiter(Predicate<GroupMessageEventArgs> predicate)
     {
         public Guid Id { get; } = Guid.NewGuid();
-
-        public Waiter(Predicate<GroupMessageEventArgs> predicate) => _predicate = predicate;
 
         public async ValueTask<GroupMessageEventArgs?> WaitNextEvent(TimeSpan timeout)
         {
@@ -36,9 +44,19 @@ public class EventChannel : IDisposable
             catch (ObjectDisposedException) { return null; }
         }
 
+        public async ValueTask<GroupMessageEventArgs?> WaitNextEvent(CancellationToken token)
+        {
+            try
+            {
+                await _semaphore.WaitAsync(token);
+                return _eventArgs;
+            }
+            catch (Exception) { return null; }
+        }
+
         public bool TryMatchEvent(GroupMessageEventArgs eventArgs)
         {
-            if (!_predicate(eventArgs)) return false;
+            if (!predicate(eventArgs)) return false;
             _eventArgs = eventArgs;
             _semaphore.Release();
             return true;
@@ -46,7 +64,6 @@ public class EventChannel : IDisposable
 
         public void SignalSemaphore() => _semaphore.Release();
 
-        private Predicate<GroupMessageEventArgs> _predicate;
         private SemaphoreSlim _semaphore = new(0, 1);
         private GroupMessageEventArgs? _eventArgs;
     }

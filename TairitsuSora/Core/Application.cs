@@ -68,10 +68,12 @@ public class Application : IDisposable
         };
         await _service.StartService();
         await InitializeCommands();
-        List<ValueTask> tasks = new() { WaitForStopAsync(), SaveConfigAsync() };
         // TODO: also await message commands
-        tasks.AddRange(_cmds.Values.Select(
-            static cmd => cmd.ExecuteAsync().IgnoreCancellation()));
+        List<ValueTask> tasks =
+        [
+            WaitForStopAsync(), SaveConfigAsync(),
+            .. _cmds.Values.Select(static cmd => cmd.ExecuteAsync().IgnoreCancellation()),
+        ];
         await tasks.WhenAll();
         Log.Info(AppName, "Application stopped");
         await _service.StopService();
@@ -87,7 +89,7 @@ public class Application : IDisposable
     private volatile SoraApi? _api;
     private EventChannel _eventChannel;
     private CancellationTokenSource _cancelSrc = new();
-    private Dictionary<string, RegisteredCommand> _cmds = new();
+    private Dictionary<string, RegisteredCommand> _cmds = [];
 
     private Application()
     {
@@ -101,7 +103,9 @@ public class Application : IDisposable
         {
             AccessToken = _config.OneBotConfig.AccessToken,
             Host = _config.OneBotConfig.Host,
-            Port = _config.OneBotConfig.Port
+            Port = _config.OneBotConfig.Port,
+            ReconnectTimeOut = TimeSpan.FromSeconds(20),
+            HeartBeatTimeOut = TimeSpan.FromSeconds(20)
         });
         _eventChannel = new EventChannel(_service);
     }
@@ -116,7 +120,7 @@ public class Application : IDisposable
                 WarnExtraCommandInConfig(cmdName);
 
         // Apply command-specific config
-        List<ValueTask> applyConfigTasks = new();
+        List<ValueTask> applyConfigTasks = [];
         foreach (var (cmdName, config) in _config.CommandConfigs)
             if (_cmds.TryGetValue(cmdName, out var cmd))
                 applyConfigTasks.Add(cmd.Command.ApplyConfigAsync(config).IgnoreException());

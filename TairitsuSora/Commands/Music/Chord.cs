@@ -166,7 +166,7 @@ public struct Chord : IEquatable<Chord>, IEnumerable<NoteValue>
         {
             if (span.Length == 0)
                 throw new ArgumentException("Empty chord");
-            _chord = new Chord();
+            _chord = [];
             ParseRoot(ref span);
             ParseChordQuality(ref span);
             ParseUpmostInterval(ref span);
@@ -799,7 +799,7 @@ public struct Chord : IEquatable<Chord>, IEnumerable<NoteValue>
 
         private List<NoteName> FindAllNoteNames(NoteName root)
         {
-            List<NoteName> result = new() { root };
+            List<NoteName> result = [root];
             // @formatter:off
             switch (_third)
             {

@@ -1,6 +1,6 @@
-﻿using MeltySynth;
+﻿using System.Diagnostics;
+using MeltySynth;
 using System.Runtime.InteropServices;
-using NAudio.Wave;
 using TairitsuSora.Utils;
 
 namespace TairitsuSora.Commands.Music;
@@ -11,18 +11,20 @@ public class PianoSynth
 {
     public const int SampleRate = 24000;
 
-    public static async ValueTask<byte[]> FromNoteEvents(IEnumerable<NoteEvent> events, int sampleLength)
+    public static async ValueTask<byte[]> FromNoteEvents(
+        IEnumerable<NoteEvent> events, int sampleLength, CancellationToken token = default)
     {
         PianoSynth instance = Instance;
-        using var lck = await instance._lock.LockAsync();
-        return PcmToWav(instance.FromEventsImpl(events, sampleLength));
+        using var lck = await instance._lock.LockAsync(token);
+        return await EncodeToFile(instance.FromEventsImpl(events, sampleLength), token);
     }
 
-    public static async ValueTask<byte[]> FromMidi(MidiFile midi)
+    public static async ValueTask<byte[]> FromMidi(
+        MidiFile midi, CancellationToken token = default)
     {
         PianoSynth instance = Instance;
-        using var lck = await instance._lock.LockAsync();
-        return PcmToWav(instance.FromMidiImpl(midi));
+        using var lck = await instance._lock.LockAsync(token);
+        return await EncodeToFile(instance.FromMidiImpl(midi), token);
     }
 
     private static PianoSynth? _instance;
@@ -65,13 +67,27 @@ public class PianoSynth
         return buffer;
     }
 
-    private static byte[] PcmToWav(byte[] pcmBytes)
+    private static async ValueTask<byte[]> EncodeToFile(byte[] pcmBytes, CancellationToken token)
     {
-        using RawSourceWaveStream waveStream =
-            new(pcmBytes, 0, pcmBytes.Length, new WaveFormat(SampleRate, 1));
-        using MemoryStream outStream = new();
-        WaveFileWriter.WriteWavFileToStream(outStream, waveStream);
-        return outStream.ToArray();
+        string inPath = $"./temp/{Guid.NewGuid()}.pcm";
+        string outPath = inPath + ".mp3";
+        await File.WriteAllBytesAsync(inPath, pcmBytes, token);
+        ProcessStartInfo procInfo = new()
+        {
+            FileName = "ffmpeg",
+            UseShellExecute = false,
+            RedirectStandardError = true,
+            RedirectStandardOutput = true,
+            ArgumentList =
+            {
+                "-f", "s16le",
+                "-ar", SampleRate.ToString(),
+                "-ac", "1",
+                "-i", inPath, outPath
+            }
+        };
+        await procInfo.RunAsync(token: token);
+        return await File.ReadAllBytesAsync(outPath, token);
     }
 }
 
@@ -81,7 +97,7 @@ public class SoundFontManager
 
     private static Lazy<SoundFontManager> _instance = new(() => new SoundFontManager());
 
-    private Dictionary<string, SoundFont> _soundFonts = new();
+    private Dictionary<string, SoundFont> _soundFonts = [];
 
     public SoundFont LoadSoundFontImpl(string path)
     {

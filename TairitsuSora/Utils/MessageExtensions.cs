@@ -126,6 +126,9 @@ public static class MessageExtensions
     public static bool FromSameMember(this GroupMessageEventArgs self, GroupMessageEventArgs other)
         => self.SourceGroup.Id == other.SourceGroup.Id && self.SenderInfo.UserId == other.SenderInfo.UserId;
 
+    public static bool FromSameGroup(this GroupMessageEventArgs self, GroupMessageEventArgs other)
+        => self.SourceGroup.Id == other.SourceGroup.Id;
+
     public static bool IsAdmin(this GroupSenderInfo sender)
         => sender.Role >= MemberRoleType.Admin || Application.Instance.Admins.Contains(sender.UserId);
 }

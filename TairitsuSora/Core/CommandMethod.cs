@@ -1,4 +1,5 @@
 ﻿using System.Reflection;
+using LanguageExt;
 using Sora.Entities;
 using Sora.Entities.Segment;
 using Sora.EventArgs.SoraEvent;
@@ -33,10 +34,10 @@ public class CommandMethod
         {
             ICommandParameterInfo paramInfo = _paramInfos[i];
             var match = paramInfo.TryMatch(ref msg);
-            if (match.HoldsError) return new CommandMatchFailure(i, match.Error).AsError();
-            if (paramInfo.Index is { } idx) parameters[idx + idxOffset] = match.Result;
+            if (match.IsRight) return new CommandMatchFailure(i, match.GetRight());
+            if (paramInfo.Index is { } idx) parameters[idx + idxOffset] = match.GetLeft().Value;
         }
-        return msg.IsEmpty() ? parameters : new CommandMatchFailure(_paramInfos.Length, "指令结尾有多余的参数").AsError();
+        return msg.IsEmpty() ? parameters : new CommandMatchFailure(_paramInfos.Length, "指令结尾有多余的参数");
     }
 
     public async ValueTask Invoke(Command cmd, object?[] args, GroupMessageEventArgs eventArgs)
@@ -45,7 +46,11 @@ public class CommandMethod
         try { await _resultConverter(_method, cmd, args, eventArgs); }
         catch (Exception ex)
         {
-            if (HandlerAttribute.ReplyException) await eventArgs.QuoteReply(ex.Message);
+            if (HandlerAttribute.ReplyException)
+            {
+                if (ex.InnerException is not null) ex = ex.InnerException;
+                await eventArgs.QuoteReply(ex.Message);
+            }
             else throw;
         }
     }
@@ -60,99 +65,83 @@ public class CommandMethod
     {
         int? Index { get; }
         string Description { get; }
-        Either<object?, string> TryMatch(ref MessageBody msg);
+        Either<Any, string> TryMatch(ref MessageBody msg);
     }
 
-    private class KeywordCommandParameter : ICommandParameterInfo
+    private class KeywordCommandParameter(string keyword) : ICommandParameterInfo
     {
         public int? Index => null;
         // ReSharper disable once ConvertToAutoPropertyWhenPossible
-        public string Description => _keyword;
+        public string Description => keyword;
 
-        public KeywordCommandParameter(string keyword) => _keyword = keyword;
-
-        public Either<object?, string> TryMatch(ref MessageBody msg)
+        public Either<Any, string> TryMatch(ref MessageBody msg)
         {
             var (token, remaining) = msg.SeparateFirstToken();
-            if (token.GetText() != _keyword)
-                return $"未能匹配关键词 {_keyword}".AsError();
+            if (token.GetText() != keyword)
+                return $"未能匹配关键词 {keyword}";
             msg = remaining;
-            return null;
+            return Any.Null;
         }
-
-        private string _keyword;
     }
 
-    private class SingleCommandParameter : ICommandParameterInfo
+    private class SingleCommandParameter(
+        string paramName,
+        int index,
+        Type type,
+        IReadOnlyDictionary<Type, IParameterMatcher> paramMatchers,
+        bool nullable = false,
+        object? defaultValue = null,
+        string? shownDefaultValue = null
+        ) : ICommandParameterInfo
     {
-        public int? Index { get; }
+        public int? Index { get; } = index;
 
         public string Description => _shownDefaultValue is null
-            ? $"[{_paramName}: {ShownTypeName}]"
-            : $"[{_paramName}: {ShownTypeName} = {_shownDefaultValue}]";
+            ? $"[{paramName}: {ShownTypeName}]"
+            : $"[{paramName}: {ShownTypeName} = {_shownDefaultValue}]";
 
-        public SingleCommandParameter(string paramName, int index, Type type,
-            IReadOnlyDictionary<Type, IParameterMatcher> paramMatchers,
-            bool nullable = false, object? defaultValue = null, string? shownDefaultValue = null)
-        {
-            _matcher = GetMatcherFor(type, paramMatchers);
-            _paramName = paramName;
-            Index = index;
-            _nullable = nullable;
-            _defaultValue = defaultValue;
-            _shownDefaultValue = shownDefaultValue ?? defaultValue;
-        }
-
-        public Either<object?, string> TryMatch(ref MessageBody msg)
+        public Either<Any, string> TryMatch(ref MessageBody msg)
         {
             var match = _matcher.TryMatch(ref msg);
-            if (match.HoldsResult) return match.Result;
-            if (_nullable || _defaultValue is not null) return _defaultValue;
-            return (msg.IsWhitespace()
-                ? $"缺失参数 {_paramName}: {_matcher.ShownTypeName}"
-                : $"无法将 {match.Error.Stringify()} 解析为参数 {_paramName}: {_matcher.ShownTypeName}")
-                .AsError();
+            if (match.IsLeft) return match.GetLeft();
+            if (nullable || defaultValue is not null) return defaultValue.ToAny();
+            return msg.IsWhitespace()
+                ? $"缺失参数 {paramName}: {_matcher.ShownTypeName}"
+                : $"无法将 {match.GetRight().Stringify()} 解析为参数 {paramName}: {_matcher.ShownTypeName}";
         }
 
-        private IParameterMatcher _matcher;
-        private string _paramName;
-        private bool _nullable;
-        private object? _defaultValue;
-        private object? _shownDefaultValue;
+        private IParameterMatcher _matcher = GetMatcherFor(type, paramMatchers);
+        private object? _shownDefaultValue = shownDefaultValue ?? defaultValue;
 
         private string ShownTypeName
-            => $"{_matcher.ShownTypeName}{(_nullable && _shownDefaultValue is null ? "?" : "")}";
+            => $"{_matcher.ShownTypeName}{(nullable && _shownDefaultValue is null ? "?" : "")}";
     }
 
-    private class ArrayCommandParameter : ICommandParameterInfo
+    private class ArrayCommandParameter(
+        string paramName,
+        int index,
+        Type type,
+        IReadOnlyDictionary<Type, IParameterMatcher> paramMatchers
+        ) : ICommandParameterInfo
     {
-        public int? Index { get; }
-        public string Description => $"[{_paramName}: {_matcher.ShownTypeName}...]";
+        public int? Index { get; } = index;
+        public string Description => $"[{paramName}: {_matcher.ShownTypeName}...]";
 
-        public ArrayCommandParameter(string paramName, int index, Type type,
-            IReadOnlyDictionary<Type, IParameterMatcher> paramMatchers)
+        public Either<Any, string> TryMatch(ref MessageBody msg)
         {
-            _matcher = GetMatcherFor(type, paramMatchers);
-            _paramName = paramName;
-            Index = index;
-        }
-
-        public Either<object?, string> TryMatch(ref MessageBody msg)
-        {
-            List<object?> list = new();
+            List<object?> list = [];
             while (true)
             {
                 var match = _matcher.TryMatch(ref msg);
-                if (match.HoldsError) break;
-                list.Add(match.Result);
+                if (match.IsRight) break;
+                list.Add(match.GetLeft().Value);
             }
             Array array = Array.CreateInstance(_matcher.ParameterType, list.Count);
             for (int i = 0; i < list.Count; i++) array.SetValue(list[i], i);
-            return array;
+            return array.ToAny();
         }
 
-        private IParameterMatcher _matcher;
-        private string _paramName;
+        private IParameterMatcher _matcher = GetMatcherFor(type, paramMatchers);
     }
 
     private static Dictionary<Type, GroupMessageHandlerResultConverter> _typedConverters;
@@ -162,7 +151,7 @@ public class CommandMethod
     private int _methodParamCount;
     private GroupMessageHandlerResultConverter _resultConverter;
     private IReadOnlyDictionary<Type, IParameterMatcher> _paramMatchers;
-    private ICommandParameterInfo[] _paramInfos = Array.Empty<ICommandParameterInfo>();
+    private ICommandParameterInfo[] _paramInfos = [];
     private string? _signatureDesc;
 
     static CommandMethod()
@@ -203,7 +192,7 @@ public class CommandMethod
 
     private static Dictionary<Type, IParameterMatcher> MakeDefaultMatchers()
     {
-        Dictionary<Type, IParameterMatcher> res = new();
+        Dictionary<Type, IParameterMatcher> res = [];
         void AddMatcher(IParameterMatcher matcher) => res[matcher.ParameterType] = matcher;
         AddMatcher(new IntParameterMatcher());
         AddMatcher(new FloatParameterMatcher());

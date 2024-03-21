@@ -48,7 +48,7 @@ public class RegisteredCommand
 
     private static List<CommandMethod> RegisterCommandMethods(Command cmd)
     {
-        List<CommandMethod> res = new();
+        List<CommandMethod> res = [];
         foreach (var method in cmd.GetType().GetMethods())
             if (method.GetCustomAttribute<MessageHandlerAttribute>() is { } attr)
                 res.Add(CommandMethod.Create(method, attr));
@@ -68,14 +68,14 @@ public class RegisteredCommand
         for (int i = 0; i < _cmdMethods.Length; i++)
         {
             var match = _cmdMethods[i].TryMatch(remaining);
-            if (match.HoldsResult)
+            if (match.IsLeft)
             {
-                var args = match.Result;
+                var args = match.GetLeft();
                 await _cmdMethods[i].Invoke(Command, args, eventArgs);
                 return;
             }
-            matchFailures[i] = match.Error;
-            maxMatch = Math.Max(maxMatch, match.Error.MatchedParameterCount);
+            matchFailures[i] = match.GetRight();
+            maxMatch = Math.Max(maxMatch, match.GetRight().MatchedParameterCount);
         }
         StringBuilder sb = new("未能匹配该指令");
         for (int i = 0; i < _cmdMethods.Length; i++)
