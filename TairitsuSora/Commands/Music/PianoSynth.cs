@@ -70,7 +70,7 @@ public class PianoSynth
     private static async ValueTask<byte[]> EncodeToFile(byte[] pcmBytes, CancellationToken token)
     {
         string inPath = $"./temp/{Guid.NewGuid()}.pcm";
-        string outPath = inPath + ".mp3";
+        string outPath = inPath + ".wav";
         await File.WriteAllBytesAsync(inPath, pcmBytes, token);
         ProcessStartInfo procInfo = new()
         {

@@ -181,7 +181,7 @@ public class Application : IDisposable
         {
             foreach (var (cmdName, cmd) in _cmds)
                 if (cmd.Info.Togglable)
-                    _config.CommandEnabledGroups[cmdName] = new HashSet<long>(cmd.Command.EnabledGroups);
+                    _config.CommandEnabledGroups[cmdName] = [..cmd.Command.EnabledGroups];
             var configs = await _cmds.Select(GetCommandConfig).WhenAll();
             foreach (var (cmdName, config) in configs)
             {

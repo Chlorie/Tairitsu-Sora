@@ -9,7 +9,6 @@ public class Ping : Command
     {
         Trigger = "ping",
         Togglable = false,
-        Listed = true,
         Summary = "在线状态测试"
     };
 

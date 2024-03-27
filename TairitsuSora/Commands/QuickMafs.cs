@@ -1,4 +1,5 @@
-﻿using System.Numerics;
+﻿using System.Globalization;
+using System.Numerics;
 using Sora.EventArgs.SoraEvent;
 using TairitsuSora.Core;
 using TairitsuSora.Utils;
@@ -32,13 +33,16 @@ public class QuickMafs : GroupGame
         await Task.Delay(3000);
         for (int i = 0; i < 50; i++)
         {
-            (string q, string a) = GenerateQA(i / 5);
+            (string q, BigInteger a) = GenerateQA(i / 5);
             await ev.Reply($"Q{i + 1}: {q}");
-            if (await Application.EventChannel.WaitNextGroupMessage(
-                   next => next.FromSameMember(ev) && next.Message.MessageBody.GetIfOnlyText() == a,
+            if (await Application.EventChannel.WaitNextGroupMessage(next =>
+                        next.FromSameMember(ev) &&
+                        next.Message.MessageBody.GetIfOnlyText() is { } text &&
+                        BigInteger.TryParse(text, NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out BigInteger bi) &&
+                        bi == a,
                    time) is not null)
                 continue;
-            await ev.Reply($"最终分数: {i}\nA{i + 1}: {q} {a}");
+            await ev.Reply($"最终分数: {i}\nA{i + 1}: {q} {a:N0}");
             return;
         }
         await ev.Reply("开挂实锤，我麻了");
@@ -59,7 +63,7 @@ public class QuickMafs : GroupGame
         return res;
     }
 
-    private static (string, string) GenerateQA(int difficulty)
+    private static (string, BigInteger) GenerateQA(int difficulty)
     {
         int digits1 = (difficulty + 3) / 2, digits2 = (difficulty + 2) / 2;
         switch (Random.Shared.Next(2))
@@ -71,8 +75,8 @@ public class QuickMafs : GroupGame
                 var b = RandBigIntWithNDigits(digits);
                 return Random.Shared.Next(2) switch
                 {
-                    0 => ($"{a} + {b} =", (a + b).ToString()),
-                    1 => ($"{a + b} - {a} =", b.ToString()),
+                    0 => ($"{a:N0} + {b:N0} =", a + b),
+                    1 => ($"{a + b:N0} - {a:N0} =", b),
                     _ => throw new InvalidOperationException()
                 };
             }
@@ -82,8 +86,8 @@ public class QuickMafs : GroupGame
                 var b = RandBigIntWithNDigits(digits2);
                 return Random.Shared.Next(2) switch
                 {
-                    0 => ($"{a} × {b} =", (a * b).ToString()),
-                    1 => ($"{a * b} / {b} =", a.ToString()),
+                    0 => ($"{a:N0} × {b:N0} =", a * b),
+                    1 => ($"{a * b:N0} / {b:N0} =", a),
                     _ => throw new InvalidOperationException()
                 };
             }

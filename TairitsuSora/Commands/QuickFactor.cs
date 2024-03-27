@@ -47,12 +47,12 @@ public class QuickFactor : GroupGame
         for (int i = 0; i < 50; i++)
         {
             (BigInteger q, SortedDictionary<int, int> a) = GenerateQA(i / 3, maxi);
-            await ev.Reply($"Q{i + 1}: {q}");
+            await ev.Reply($"Q{i + 1}: {q:N0}");
             if (await Application.EventChannel.WaitNextGroupMessage(
                     next => next.FromSameMember(ev) && CheckAnswer(a, next.Message.MessageBody.GetIfOnlyText()),
                     time) is not null)
                 continue;
-            await ev.Reply($"最终分数: {i}\nA{i + 1}: {q} = {FormatAnswer(a)}");
+            await ev.Reply($"最终分数: {i}\nA{i + 1}: {q:N0} = {FormatAnswer(a)}");
             return;
         }
         await ev.Reply("开挂实锤，我麻了");

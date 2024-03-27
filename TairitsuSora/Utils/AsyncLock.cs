@@ -10,18 +10,15 @@ public class AsyncLock
         return new Releaser(_semaphore);
     }
 
-    public struct Releaser : IDisposable
+    public struct Releaser(SemaphoreSlim semaphore) : IDisposable
     {
-        public Releaser(SemaphoreSlim semaphore) => _semaphore = semaphore;
-
         public void Dispose()
         {
             if (_disposed) return;
             _disposed = true;
-            _semaphore.Release();
+            semaphore.Release();
         }
 
-        private SemaphoreSlim _semaphore;
         private bool _disposed = false;
     }
 
