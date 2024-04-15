@@ -1,14 +1,17 @@
 ﻿using System.Collections.Concurrent;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Web;
+using LanguageExt;
 using Sora.EventArgs.SoraEvent;
+using TairitsuSora.Commands.MinecraftServerManager;
 using TairitsuSora.Core;
+using TairitsuSora.Utils;
 
 namespace TairitsuSora.Commands;
 
 [RegisterCommand]
-public class McsmController : Command
+public class McsmController : Command, IDisposable
 {
     public override CommandInfo Info => new()
     {
@@ -18,9 +21,9 @@ public class McsmController : Command
 
     public override ValueTask ApplyConfigAsync(JsonNode config)
     {
-        var dict = config.Deserialize<Dictionary<long, McsmInstanceConfig>>() ?? [];
-        _instances = new ConcurrentDictionary<long, McsmInstance>(dict.ToDictionary(
-            kv => kv.Key, kv => kv.Value.CreateInstance()));
+        var dict = config.Deserialize<Dictionary<long, ControllerConfig>>() ?? [];
+        _instances = new ConcurrentDictionary<long, ControllerInstance>(dict.ToDictionary(
+            kv => kv.Key, kv => new ControllerInstance(kv.Value, kv.Key, _client)));
         return ValueTask.CompletedTask;
     }
 
@@ -30,116 +33,83 @@ public class McsmController : Command
         return ValueTask.FromResult(JsonSerializer.SerializeToNode(configs));
     }
 
-    [MessageHandler(Signature = "ping", Description = "检查实例是否正常工作")]
+    public override async ValueTask ExecuteAsync()
+        => await Task.WhenAll(_instances.Values.Select(inst => inst.Run().AsTask()));
+
+    [MessageHandler(Signature = "msgfwd $enabled", Description = "开启/关闭消息同步")]
+    public string ToggleMessageForwarding(GroupMessageEventArgs ev, bool enabled)
+        => CheckAdmin(ev).Match(
+            Left: inst =>
+            {
+                inst.EnableMessageForwarding = enabled;
+                return enabled ? "已开启消息同步" : "已关闭消息同步";
+            },
+            Right: msg => msg
+        );
+
+    [MessageHandler(Signature = "ping", Description = "检查实例是否正常工作", ReplyException = true)]
     public async ValueTask<string> PingServer(GroupMessageEventArgs ev)
+    {
+        string DisplayRunningStatus(PingData data)
+        {
+            StringBuilder sb = new("[运行中]\n");
+            sb.AppendLine($"服务器版本: {data.Info!.Version}");
+            sb.AppendLine($"当前在线人数: {data.Info.CurrentPlayers}");
+            if (data.ProcessInfo!.CpuUsage >= 0.01f)
+                sb.AppendLine($"CPU 占用: {data.ProcessInfo.CpuUsage:0.00}%");
+            sb.AppendLine($"内存占用: {(float)data.ProcessInfo.MemoryUsage / 1_000_000_000:0.00}GB");
+            return sb.ToString();
+        }
+
+        return !_instances.TryGetValue(ev.SourceGroup.Id, out var inst)
+            ? "当前群没有绑定 MCSManager 实例"
+            : await inst.Ping() switch
+            {
+                { Status: PingStatusCode.Stopped } => "[已停止]",
+                { Status: PingStatusCode.Stopping } => "[正在停止]",
+                { Status: PingStatusCode.Starting } => "[正在启动]",
+                { Status: PingStatusCode.Unknown } => "[未知]",
+                var data => DisplayRunningStatus(data)
+            };
+    }
+
+    [MessageHandler(Signature = "backup", Description = "备份当前世界数据", ReplyException = true)]
+    public async ValueTask<string> BackupWorld(GroupMessageEventArgs ev)
+    {
+        const long giga = 1_000_000_000;
+        var maybeInst = CheckAdmin(ev);
+        if (maybeInst.IsRight) return maybeInst.GetRight();
+        var inst = maybeInst.GetLeft();
+        var status = await inst.MakeBackup("/chlorealm", "/backups", 15 * giga);
+        return $"备份完成！留存 {status.CurrentCount} 个文件，删除旧文件 {status.PrunedCount} 个，" +
+               $"文件共占 {(double)status.TotalSize / giga:0.00}GB";
+    }
+
+    [MessageHandler(Signature = "seed", Description = "获取当前世界的种子", ReplyException = true)]
+    public async ValueTask<string> GetSeed(GroupMessageEventArgs ev)
     {
         if (!_instances.TryGetValue(ev.SourceGroup.Id, out var inst))
             return "当前群没有绑定 MCSManager 实例";
-        var data = await inst.PingInstance(_client);
-        int statusCode = data["status"]!.GetValue<int>();
-        if (statusCode != 3)
-            return $"[{statusCode switch
-            {
-                0 => "已停止",
-                1 => "正在停止",
-                2 => "正在启动",
-                _ => "未知"
-            }}]";
-
-        var processInfo = data["processInfo"]!;
-        float cpuUsage = processInfo["cpu"]!.GetValue<float>();
-        long memUsage = processInfo["memory"]!.GetValue<long>();
-        var info = data["info"]!;
-        string currentPlayers = info["currentPlayers"]!.GetValue<string>();
-        string version = info["version"]!.GetValue<string>();
-        return $"""
-            [运行中]
-            服务器版本: {version}
-            当前在线人数: {currentPlayers}
-            CPU 占用: {cpuUsage:0.00}%
-            内存占用: {(float)memUsage / 1_000_000_000:0.00}GB
-            """;
+        string seed = await inst.GetSeed();
+        return $"种子：{seed}";
     }
 
-    private record McsmInstanceConfig(
-        long AdminId,
-        string ApiEndpoint,
-        string ApiKey,
-        string Uuid,
-        string RemoteUuid,
-        bool EnableMessageForwarding = false
-    )
+    public void Dispose()
     {
-        public McsmInstance CreateInstance() => new() { Config = this };
+        foreach (var inst in _instances.Values)
+            inst.Dispose();
+        _client.Dispose();
     }
 
-    private class McsmInstance
-    {
-        public McsmInstanceConfig Config { get; init; } = null!;
-
-        public async Task<JsonNode> PingInstance(HttpClient client)
-        {
-            var query = HttpUtility.ParseQueryString(string.Empty);
-            query["apikey"] = Config.ApiKey;
-            query["uuid"] = Config.Uuid;
-            query["remote_uuid"] = Config.RemoteUuid;
-            var url = new UriBuilder($"{Config.ApiEndpoint}/api/instance") { Query = query.ToString() }.ToString();
-            var response = await client.GetAsync(url);
-            response.EnsureSuccessStatusCode();
-            return JsonNode.Parse(await response.Content.ReadAsStringAsync())!["data"]!;
-        }
-
-        public async Task RunCommand(HttpClient client, string command)
-        {
-            var query = HttpUtility.ParseQueryString(string.Empty);
-            query["apikey"] = Config.ApiKey;
-            query["uuid"] = Config.Uuid;
-            query["remote_uuid"] = Config.RemoteUuid;
-            query["command"] = command;
-            var url = new UriBuilder($"{Config.ApiEndpoint}/api/protected_instance/command")
-            { Query = query.ToString() }.ToString();
-            await client.GetAsync(url);
-        }
-
-        public async Task<string[]> UpdateLines(HttpClient client)
-        {
-            try { return await UpdateLinesImpl(client); }
-            catch { return []; }
-        }
-
-        private string[] _cachedLines = [];
-
-        private async Task<string[]> UpdateLinesImpl(HttpClient client)
-        {
-            var query = HttpUtility.ParseQueryString(string.Empty);
-            query["apikey"] = Config.ApiKey;
-            query["uuid"] = Config.Uuid;
-            query["remote_uuid"] = Config.RemoteUuid;
-            query["size"] = "4096";
-            var url = new UriBuilder($"{Config.ApiEndpoint}/api/protected_instance/outputlog")
-            { Query = query.ToString() }.ToString();
-            var response = await client.GetAsync(url);
-            response.EnsureSuccessStatusCode();
-            var node = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
-            var lines = node["data"]!
-                .GetValue<string>()
-                .Split("\n")[1..]
-                .Select(line => line.Trim())
-                .Where(line => !string.IsNullOrWhiteSpace(line))
-                .ToArray();
-            if (_cachedLines.Length == 0)
-            {
-                _cachedLines = lines;
-                return [];
-            }
-            if (lines.Length == 0) return lines;
-            var cachedSet = _cachedLines.ToHashSet();
-            _cachedLines = lines;
-            lines = lines.Where(line => !cachedSet.Contains(line)).ToArray();
-            return lines;
-        }
-    }
-
-    private ConcurrentDictionary<long, McsmInstance> _instances = [];
+    private ConcurrentDictionary<long, ControllerInstance> _instances = [];
     private HttpClient _client = new();
+
+    private Either<ControllerInstance, string> CheckAdmin(GroupMessageEventArgs ev)
+    {
+        if (!_instances.TryGetValue(ev.SourceGroup.Id, out var inst))
+            return "当前群没有绑定 MCSManager 实例";
+        if (ev.SenderInfo.UserId != inst.Config.AdminId)
+            return "仅服务器管理员可以执行此操作";
+        return inst;
+    }
 }

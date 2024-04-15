@@ -25,6 +25,8 @@ public class Application : IDisposable
 
     public void Dispose()
     {
+        foreach (var cmd in Commands)
+            (cmd.Command as IDisposable)?.Dispose();
         _cancelSrc.Dispose();
         _eventChannel.Dispose();
     }
@@ -51,7 +53,7 @@ public class Application : IDisposable
             if (!type.IsSubclassOf(typeof(Command)))
                 throw new ArgumentException(
                     $"A class with {nameof(RegisterCommandAttribute)} is not derived from {nameof(Command)}");
-            if (type.GetConstructor(Array.Empty<Type>()) is not { } ctorInfo)
+            if (type.GetConstructor([]) is not { } ctorInfo)
                 throw new ArgumentException(
                     $"A command class marked with {nameof(RegisterCommandAttribute)} is not " +
                     $"default constructible, thus it is skipped");
@@ -181,7 +183,7 @@ public class Application : IDisposable
         {
             foreach (var (cmdName, cmd) in _cmds)
                 if (cmd.Info.Togglable)
-                    _config.CommandEnabledGroups[cmdName] = [..cmd.Command.EnabledGroups];
+                    _config.CommandEnabledGroups[cmdName] = [.. cmd.Command.EnabledGroups];
             var configs = await _cmds.Select(GetCommandConfig).WhenAll();
             foreach (var (cmdName, config) in configs)
             {

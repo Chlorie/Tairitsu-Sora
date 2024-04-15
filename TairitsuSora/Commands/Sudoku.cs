@@ -70,26 +70,28 @@ public class Sudoku : Command
     }
 
     private static readonly string[] DifficultyFileNames =
-        { "trivial", "casual", "beginner", "intermediate", "advanced", "expert", "master" };
-    private static readonly string[] DifficultyNames = { "显然", "休闲", "入门", "进阶", "高级", "专家", "大师" };
+        ["trivial", "casual", "beginner", "intermediate", "advanced", "expert", "master"];
+    private static readonly string[] DifficultyNames = ["显然", "休闲", "入门", "进阶", "高级", "专家", "大师"];
     private static readonly DateTime FirstDay = new(2023, 8, 31);
 
-    private static readonly string LevelingReasons = $@"难度分级依据:
-题目难度按照解题时需要采用的最难技巧确定，技巧体感难度可能存在个人差。
-{DifficultyNames[0]} (0): 只需要区内唯一余数、宫内排除即可解出题目；
-{DifficultyNames[1]} (1): 唯一候选、唯一位置、区域相交；
-{DifficultyNames[2]} (2): 显/隐数对、X翼；
-{DifficultyNames[3]} (3): 显/隐三元组、带鳍X翼、XY翼、XYZ翼、W翼、（带鳍）剑鱼、多宝鱼（3长度X链）、3长度XY链；
-{DifficultyNames[4]} (4): 显/隐四元组、远程数对、简单染色法、（带鳍）水母、最大5长度X链、最大5长度XY链；
-{DifficultyNames[5]} (5): 交替推理链、连续循环、双区不交子集（SdC）、待定数组双强链（ALS-XZ）；
-{DifficultyNames[6]} (6): 存在至少一个步骤无法用以上列出的任何技巧解出。";
+    private static readonly string LevelingReasons = $"""
+        难度分级依据:
+        题目难度按照解题时需要采用的最难技巧确定，技巧体感难度可能存在个人差。
+        {DifficultyNames[0]} (0): 只需要区内唯一余数、宫内排除即可解出题目；
+        {DifficultyNames[1]} (1): 唯一候选、唯一位置、区域相交；
+        {DifficultyNames[2]} (2): 显/隐数对、X翼；
+        {DifficultyNames[3]} (3): 显/隐三元组、带鳍X翼、XY翼、XYZ翼、W翼、（带鳍）剑鱼、多宝鱼（3长度X链）、3长度XY链；
+        {DifficultyNames[4]} (4): 显/隐四元组、远程数对、简单染色法、（带鳍）水母、最大5长度X链、最大5长度XY链；
+        {DifficultyNames[5]} (5): 交替推理链、连续循环、双区不交子集（SdC）、待定数组双强链（ALS-XZ）；
+        {DifficultyNames[6]} (6): 存在至少一个步骤无法用以上列出的任何技巧解出。
+        """;
 
     private Puzzle[][] _puzzles = null!;
 
     private static DateTime? ParseDate(string? date)
     {
         if (date is null) return DateTime.Today;
-        string[] formats = { "yyyy-M-d", "yyyy/M/d", "yy-M-d", "yy/M/d", "M-d", "M/d" };
+        string[] formats = ["yyyy-M-d", "yyyy/M/d", "yy-M-d", "yy/M/d", "M-d", "M/d"];
         return DateTime.TryParseExact(date, formats, null, DateTimeStyles.None, out DateTime res) ? res : null;
     }
 

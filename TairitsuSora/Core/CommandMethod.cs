@@ -194,6 +194,7 @@ public class CommandMethod
     {
         Dictionary<Type, IParameterMatcher> res = [];
         void AddMatcher(IParameterMatcher matcher) => res[matcher.ParameterType] = matcher;
+        AddMatcher(new BoolParameterMatcher());
         AddMatcher(new IntParameterMatcher());
         AddMatcher(new FloatParameterMatcher());
         AddMatcher(new StringParameterMatcher());

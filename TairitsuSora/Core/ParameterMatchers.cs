@@ -7,6 +7,24 @@ using TairitsuSora.Utils;
 
 namespace TairitsuSora.Core;
 
+public class BoolParameterMatcher : TokenParameterMatcher
+{
+    public override Type ParameterType => typeof(bool);
+    public override string ShownTypeName => "bool";
+
+    protected override Option<Any> TryMatchToken(SoraSegment segment)
+    {
+        if (segment.GetText() is not { } text) return None;
+        text = text.Trim().ToLower();
+        return text switch
+        {
+            "true" or "yes" or "on" or "1" => true.ToAny(),
+            "false" or "no" or "off" or "0" => false.ToAny(),
+            _ => None
+        };
+    }
+}
+
 public class IntParameterMatcher : TokenParameterMatcher
 {
     public override Type ParameterType => typeof(int);

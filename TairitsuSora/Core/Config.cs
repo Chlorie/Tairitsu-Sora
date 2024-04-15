@@ -9,7 +9,7 @@ public class BotConfig
 {
     [JsonInclude] public long BotId;
     [JsonInclude] public OneBotConfig OneBotConfig = new();
-    [JsonInclude] public long[] Admins = Array.Empty<long>();
+    [JsonInclude] public long[] Admins = [];
     [JsonInclude] public Dictionary<string, HashSet<long>> CommandEnabledGroups = [];
     [JsonInclude] public Dictionary<string, JsonNode> CommandConfigs = [];
 

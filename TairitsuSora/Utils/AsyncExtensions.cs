@@ -23,6 +23,24 @@ public static class AsyncExtensions
     public static ValueTask IgnoreException(this ValueTask task, bool logException = true)
         => task.IgnoreException<Exception>(logException);
 
+    public static async ValueTask<TRes?> ExceptionAsNull<TRes, TExc>(
+        this ValueTask<TRes> task, bool logException = true) where TRes : class where TExc : Exception
+    {
+        try
+        {
+            return await task.ConfigureAwait(false);
+        }
+        catch (TExc e)
+        {
+            if (logException)
+                Log.Error(e, Application.AppName, "Exception caught and ignored");
+            return null;
+        }
+    }
+
+    public static ValueTask<T?> ExceptionAsNull<T>(this ValueTask<T> task, bool logException = true) where T : class
+        => ExceptionAsNull<T, Exception>(task, logException);
+
     public static ValueTask IgnoreCancellation(this ValueTask task)
         => task.IgnoreException<OperationCanceledException>(false);
 

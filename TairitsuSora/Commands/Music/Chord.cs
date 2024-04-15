@@ -22,7 +22,7 @@ public readonly record struct NoteName(NoteBase White, int Accidental)
 {
     public NoteValue Value => NoteValue.C.IntervalUp(WhiteKeyValue(White) + Accidental);
 
-    public override string ToString() => @$"{White}{Accidental switch
+    public override string ToString() => $"{White}{Accidental switch
     {
         -2 => "bb",
         -1 => "b",
@@ -151,9 +151,9 @@ public struct Chord : IEquatable<Chord>, IEnumerable<NoteValue>
     private class ChordParser
     {
         private static readonly NoteValue[] CMajorNoteValues =
-            { NoteValue.A, NoteValue.B, NoteValue.C, NoteValue.D, NoteValue.E, NoteValue.F, NoteValue.G };
+            [NoteValue.A, NoteValue.B, NoteValue.C, NoteValue.D, NoteValue.E, NoteValue.F, NoteValue.G];
         private static readonly int[] IntervalInHalfSteps =
-            { 0, 0, 2, 4, 5, 7, 9, 10, 12, 14, 16, 17, 19, 21, 22, 24 };
+            [0, 0, 2, 4, 5, 7, 9, 10, 12, 14, 16, 17, 19, 21, 22, 24];
 
         private enum ChordQuality { Default, Major, Minor, Diminished, Augmented, PowerChord }
 
@@ -664,7 +664,6 @@ public struct Chord : IEquatable<Chord>, IEnumerable<NoteValue>
         private IEnumerable<NoteName> IterateChordNotes(NoteName note)
         {
             yield return note;
-            // @formatter:off
             switch (_third)
             {
                 case Third.No: break;
@@ -694,8 +693,7 @@ public struct Chord : IEquatable<Chord>, IEnumerable<NoteValue>
                 case Seventh.Diminished: yield return note.IntervalUp(9, 7); break;
                 default: throw new ArgumentOutOfRangeException();
             }
-            // @formatter:on
-            int[] extensionHalfSteps = { 2, 5, 9 };
+            int[] extensionHalfSteps = [2, 5, 9];
             for (int i = 0; i < 3; i++)
             {
                 if ((_extensions[i] & Flat) != 0)

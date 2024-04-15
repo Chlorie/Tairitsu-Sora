@@ -268,7 +268,7 @@ public class JapaneseWordle : GroupGame
     {
         StringBuilder sb = new(list[0].target);
         WordInfo[] filtered = list.Where(w => w.common).ToArray();
-        if (filtered.Length == 0 && list.Count != 0) filtered = new[] { list[0] };
+        if (filtered.Length == 0 && list.Count != 0) filtered = [list[0]];
         foreach (WordInfo word in filtered)
         {
             sb.Append($"\n{word.jp}: {word.en[0][0]}");

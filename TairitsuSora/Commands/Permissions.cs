@@ -21,30 +21,8 @@ public class Permissions : Command
                           cmd.Command.IsEnabledInGroup(ev.SourceGroup.Id))
             .Select(cmd => cmd.Info.Trigger));
 
-    [MessageHandler(Signature = "enable", Description = "启用所有指令")]
-    public string EnableAllCommands(GroupMessageEventArgs ev) => ToggleAllCommands(ev, true);
-
-    [MessageHandler(Signature = "disable", Description = "禁用所有指令")]
-    public string DisableAllCommands(GroupMessageEventArgs ev) => ToggleAllCommands(ev, false);
-
-    [MessageHandler(Signature = "enable $cmdName", Description = "启用指令 [cmdName] *群管理员")]
-    public string EnableCommand(GroupMessageEventArgs ev, string cmdName) => ToggleCommand(ev, cmdName, true);
-
-    [MessageHandler(Signature = "disable $cmdName", Description = "禁用指令 [cmdName] *群管理员")]
-    public string DisableCommand(GroupMessageEventArgs ev, string cmdName) => ToggleCommand(ev, cmdName, false);
-
-    [MessageHandler(Signature = "enable global $cmdName", Description = "在所有群中启用指令 [cmdName] *超级管理员")]
-    public ValueTask<string> GlobalEnableCommand(GroupMessageEventArgs ev, string cmdName)
-        => ToggleCommandGlobal(ev, cmdName, true);
-
-    [MessageHandler(Signature = "disable global $cmdName", Description = "在所有群中禁用指令 [cmdName] *超级管理员")]
-    public ValueTask<string> GlobalDisableCommand(GroupMessageEventArgs ev, string cmdName)
-        => ToggleCommandGlobal(ev, cmdName, false);
-
-    private RegisteredCommand? FindCommand(string name)
-        => Application.Instance.Commands.FirstOrDefault(cmd => cmd.Info.Trigger == name);
-
-    private string ToggleAllCommands(GroupMessageEventArgs ev, bool enabled)
+    [MessageHandler(Signature = "$enabled", Description = "启用/禁用所有指令 *群管理员")]
+    public string ToggleAllCommands(GroupMessageEventArgs ev, bool enabled)
     {
         if (!ev.SenderInfo.IsAdmin())
             return "只有群管理员可以使用此指令";
@@ -54,7 +32,8 @@ public class Permissions : Command
         return $"已在本群{(enabled ? "启用" : "禁用")}所有指令";
     }
 
-    private string ToggleCommand(GroupMessageEventArgs ev, string cmdName, bool enabled)
+    [MessageHandler(Signature = "$cmdName $enabled", Description = "启用/禁用指令 [cmdName] *群管理员")]
+    public string ToggleCommand(GroupMessageEventArgs ev, string cmdName, bool enabled)
     {
         if (!ev.SenderInfo.IsAdmin())
             return "只有群管理员可以使用此指令";
@@ -66,7 +45,8 @@ public class Permissions : Command
         return $"已在本群{(enabled ? "启用" : "禁用")} {cmdName} 指令";
     }
 
-    private async ValueTask<string> ToggleCommandGlobal(GroupMessageEventArgs ev, string cmdName, bool enabled)
+    [MessageHandler(Signature = "global $cmdName $enabled", Description = "在所有群中启用/禁用指令 [cmdName] *超级管理员")]
+    public async ValueTask<string> GlobalToggleCommand(GroupMessageEventArgs ev, string cmdName, bool enabled)
     {
         if (!Application.Instance.Admins.Contains(ev.SenderInfo.UserId))
             return "只有超级管理员可以使用此指令";
@@ -80,4 +60,7 @@ public class Permissions : Command
             cmd.Command.ToggleGroupAvailability(group.GroupId, enabled);
         return $"已在所有群中{(enabled ? "启用" : "禁用")} {cmdName} 指令";
     }
+
+    private RegisteredCommand? FindCommand(string name)
+        => Application.Instance.Commands.FirstOrDefault(cmd => cmd.Info.Trigger == name);
 }

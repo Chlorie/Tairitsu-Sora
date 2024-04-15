@@ -64,4 +64,18 @@ public static class CollectionExtensions
         span = span[1..];
         return true;
     }
+
+    public static IDisposable Disposer(this IEnumerable<IDisposable> disposables)
+        => new CollectionDisposer { Disposables = disposables };
+
+    private readonly struct CollectionDisposer : IDisposable
+    {
+        public required IEnumerable<IDisposable> Disposables { get; init; }
+
+        public void Dispose()
+        {
+            foreach (var d in Disposables)
+                d.Dispose();
+        }
+    }
 }

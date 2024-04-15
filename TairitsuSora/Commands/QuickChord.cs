@@ -67,10 +67,10 @@ public class QuickChord : GroupGame
         if (tooShort) time = TimeSpan.FromSeconds(10);
 
         Func<Chord>[] levels =
-        {
+        [
             Level1, Level2, Level3, Level4, Level5,
             Level6, Level7, Level8, Level9, Level10
-        };
+        ];
         await ev.QuoteReply("请准备好，测试将在 3 秒后开始...");
         await Task.Delay(3000);
         for (int i = 0; i < 30; i++)
@@ -165,10 +165,10 @@ public class QuickChord : GroupGame
     public static Chord Level1()
     {
         Chord[] chords =
-        {
+        [
             NoteValue.C.Maj(), NoteValue.F.Maj(), NoteValue.G.Maj(),
             NoteValue.D.Min(), NoteValue.E.Min(), NoteValue.A.Min()
-        };
+        ];
         return chords.Sample();
     }
 
@@ -177,10 +177,10 @@ public class QuickChord : GroupGame
     public static Chord Level3()
     {
         NoteValue[] notes =
-        {
+        [
             NoteValue.C, NoteValue.D, NoteValue.E,
             NoteValue.F, NoteValue.G, NoteValue.A
-        };
+        ];
         List<Chord> chords = [];
         foreach (NoteValue note in notes)
         {
@@ -203,11 +203,11 @@ public class QuickChord : GroupGame
     {
         if (Random.Shared.Next(3) == 0) return Level4();
         Func<NoteValue, Chord>[] factories =
-        {
+        [
             NoteValueExtensions.Aug,
             NoteValueExtensions.Dim,
             NoteValueExtensions.Sus
-        };
+        ];
         NoteValue note = (NoteValue)Random.Shared.Next(12);
         return RandomInversion(factories.Sample()(note));
     }
@@ -216,7 +216,7 @@ public class QuickChord : GroupGame
     {
         if (Random.Shared.Next(3) == 0) return Level5();
         Func<NoteValue, Chord>[] factories =
-        {
+        [
             NoteValueExtensions.Dom7,
             NoteValueExtensions.Dom7Sus,
             NoteValueExtensions.Maj7,
@@ -224,7 +224,7 @@ public class QuickChord : GroupGame
             NoteValueExtensions.MinMaj7,
             NoteValueExtensions.Min7Flat5,
             NoteValueExtensions.Dim7
-        };
+        ];
         NoteValue note = (NoteValue)Random.Shared.Next(12);
         return RandomInversion(factories.Sample()(note));
     }
@@ -265,14 +265,14 @@ public class QuickChord : GroupGame
     private static Chord RandomNonAlteredTertianChord(bool eleventh, bool thirteenth)
     {
         Func<NoteValue, Chord>[] triads =
-        {
+        [
             NoteValueExtensions.Maj,
             NoteValueExtensions.Min,
             NoteValueExtensions.Aug,
             NoteValueExtensions.Dim,
             NoteValueExtensions.Sus,
             NoteValueExtensions.Sus2
-        };
+        ];
         NoteValue root = (NoteValue)Random.Shared.Next(12);
         Chord chord = triads.Sample()(root);
         if (Random.Shared.Next(2) == 0) // Has seventh
@@ -388,23 +388,23 @@ public class QuickChord : GroupGame
         {
             new DirectoryInfo("./temp").Create();
             (string treble, string bass) = GenerateNoteSpecs();
-            string str = $@"
-\version ""2.22.1"" {{
-    \new PianoStaff
-    <<
-        \new Staff {{
-            \clef treble
-            \omit Staff.TimeSignature
-            <{treble} >1
-        }}
-        \new Staff {{
-            \clef bass
-            \omit Staff.TimeSignature
-            <{bass} >1
-        }}
-    >>
-}}
-";
+            string str = $$"""
+                \version "2.22.1" {
+                    \new PianoStaff
+                    <<
+                        \new Staff {
+                            \clef treble
+                            \omit Staff.TimeSignature
+                            <{{treble}} >1
+                        }
+                        \new Staff {
+                            \clef bass
+                            \omit Staff.TimeSignature
+                            <{{bass}} >1
+                        }
+                    >>
+                }
+                """;
             stream.Write(str);
             stream.Write('\x1a');
             stream.Close();
