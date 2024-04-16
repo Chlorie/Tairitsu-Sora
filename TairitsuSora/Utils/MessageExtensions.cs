@@ -105,6 +105,12 @@ public static class MessageExtensions
         return msg;
     }
 
+    public static MessageBody At(this MessageBody msg, long userId, string? name = null)
+    {
+        msg.Add(name is null ? SoraSegment.At(userId) : SoraSegment.At(userId, name));
+        return msg;
+    }
+
     public static MessageBody Image(this MessageBody msg, byte[] bytes)
     {
         using MemoryStream stream = new(bytes);

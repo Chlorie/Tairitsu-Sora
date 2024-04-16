@@ -3,7 +3,7 @@ using Sora.EventArgs.SoraEvent;
 using TairitsuSora.Core;
 using TairitsuSora.Utils;
 
-namespace TairitsuSora.Commands;
+namespace TairitsuSora.TairitsuSora.Commands.GameCommand;
 
 public abstract class GroupGame : Command
 {

@@ -6,6 +6,7 @@ using System.Text.Json.Serialization;
 using Sora.Entities;
 using TairitsuSora.Core;
 using TairitsuSora.Utils;
+using TairitsuSora.TairitsuSora.Commands.GameCommand;
 
 namespace TairitsuSora.Commands;
 
@@ -119,7 +120,7 @@ public class JapaneseWordle : GroupGame
                 _state = state;
                 _bitmap = new SKBitmap(new SKImageInfo(CellSize * 11, ImageHeight, SKColorType.Rgba8888));
                 _canvas = new SKCanvas(_bitmap);
-                _canvas.Clear(Black);
+                _canvas.Clear(SKColors.Black);
                 _paint.TextAlign = SKTextAlign.Center;
             }
 
@@ -150,6 +151,7 @@ public class JapaneseWordle : GroupGame
             {
                 _canvas.Dispose();
                 _bitmap.Dispose();
+                _paint.Dispose();
             }
 
             private const int CellSize = 50;
@@ -169,11 +171,10 @@ public class JapaneseWordle : GroupGame
             private static readonly SKFont CandidateFont = new(TypeFace, CandidateFontSize);
             private static readonly SKColor White = new(235, 235, 235);
             private static readonly SKColor DarkText = new(100, 100, 100);
-            private static readonly SKColor Black = new(0, 0, 0);
             private static readonly SKColor Yellow = new(234, 179, 8);
             private static readonly SKColor Green = new(34, 197, 94);
             private GameState _state;
-            private SKPaint _paint = new();
+            private SKPaint _paint = new() { IsAntialias = true, TextAlign = SKTextAlign.Center };
             private SKBitmap _bitmap;
             private SKCanvas _canvas;
 

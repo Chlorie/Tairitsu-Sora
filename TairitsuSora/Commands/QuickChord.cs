@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Text;
 using TairitsuSora.Commands.Music;
 using TairitsuSora.Core;
+using TairitsuSora.TairitsuSora.Commands.GameCommand;
 using TairitsuSora.Utils;
 using YukariToolBox.LightLog;
 

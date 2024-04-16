@@ -147,7 +147,6 @@ public class Sudoku : Command
             _bitmap = new SKBitmap(new SKImageInfo(ImageSize, ImageSize, SKColorType.Rgba8888));
             _canvas = new SKCanvas(_bitmap);
             _canvas.Clear(Black);
-            _paint.TextAlign = SKTextAlign.Center;
         }
 
         public byte[] DrawAsPng()
@@ -164,6 +163,7 @@ public class Sudoku : Command
 
         public void Dispose()
         {
+            _paint.Dispose();
             _canvas.Dispose();
             _bitmap.Dispose();
         }
@@ -181,7 +181,7 @@ public class Sudoku : Command
         private static readonly SKColor Black = new(21, 21, 21);
         private Board _board;
         private Board? _solution;
-        private SKPaint _paint = new();
+        private SKPaint _paint = new() { IsAntialias = true, TextAlign = SKTextAlign.Center };
         private SKBitmap _bitmap;
         private SKCanvas _canvas;
 
