@@ -147,7 +147,7 @@ public class QuickChord : GroupGame
                 ? new Chord(answer
                     .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                     .Select(s => NoteName.ParseFrom(s.Trim()).Value))
-                : Chord.ParseFrom(answer);
+                : Chord.ParseFrom(answer.Trim());
             if (!inversion) answerChord.BassNote = groundTruth.BassNote;
             return answerChord == groundTruth;
         }
