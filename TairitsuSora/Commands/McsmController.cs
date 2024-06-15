@@ -16,7 +16,8 @@ public class McsmController : Command, IDisposable
     public override CommandInfo Info => new()
     {
         Trigger = "mcsm",
-        Summary = "在群中控制 MCSManager"
+        Summary = "在群中控制 MCSManager",
+        Listed = false
     };
 
     public override ValueTask ApplyConfigAsync(JsonNode config)
@@ -47,6 +48,17 @@ public class McsmController : Command, IDisposable
             Right: msg => msg
         );
 
+    [MessageHandler(Signature = "autobackup $enabled", Description = "开启/关闭每日自动备份")]
+    public string ToggleDailyBackup(GroupMessageEventArgs ev, bool enabled)
+        => CheckAdmin(ev).Match(
+            Left: inst =>
+            {
+                inst.EnableDailyBackup = enabled;
+                return enabled ? "已开启每日自动备份" : "已关闭每日自动备份";
+            },
+            Right: msg => msg
+        );
+
     [MessageHandler(Signature = "ping", Description = "检查实例是否正常工作", ReplyException = true)]
     public async ValueTask<string> PingServer(GroupMessageEventArgs ev)
     {
@@ -54,7 +66,7 @@ public class McsmController : Command, IDisposable
         {
             StringBuilder sb = new("[运行中]\n");
             sb.AppendLine($"服务器版本: {data.Info!.Version}");
-            sb.AppendLine($"当前在线人数: {data.Info.CurrentPlayers}");
+            sb.AppendLine($"当前在线人数: {data.Info.OnlinePlayerCount}");
             if (data.ProcessInfo!.CpuUsage >= 0.01f)
                 sb.AppendLine($"CPU 占用: {data.ProcessInfo.CpuUsage:0.00}%");
             sb.AppendLine($"内存占用: {(float)data.ProcessInfo.MemoryUsage / 1_000_000_000:0.00}GB");
@@ -74,15 +86,23 @@ public class McsmController : Command, IDisposable
     }
 
     [MessageHandler(Signature = "backup", Description = "备份当前世界数据", ReplyException = true)]
-    public async ValueTask<string> BackupWorld(GroupMessageEventArgs ev)
+    public async ValueTask BackupWorld(GroupMessageEventArgs ev)
     {
-        const long giga = 1_000_000_000;
         var maybeInst = CheckAdmin(ev);
-        if (maybeInst.IsRight) return maybeInst.GetRight();
-        var inst = maybeInst.GetLeft();
-        var status = await inst.MakeBackup("/chlorealm", "/backups", 15 * giga);
-        return $"备份完成！留存 {status.CurrentCount} 个文件，删除旧文件 {status.PrunedCount} 个，" +
-               $"文件共占 {(double)status.TotalSize / giga:0.00}GB";
+        if (maybeInst.IsRight)
+            await ev.QuoteReply(maybeInst.GetRight());
+        else
+            await maybeInst.GetLeft().MakeBackup();
+    }
+
+    [MessageHandler(Signature = "restart $forced", Description = "重启服务器，若 $forced 则强制重启", ReplyException = true)]
+    public async ValueTask RestartServer(GroupMessageEventArgs ev, bool forced = false)
+    {
+        var maybeInst = CheckAdmin(ev);
+        if (maybeInst.IsRight)
+            await ev.QuoteReply(maybeInst.GetRight());
+        else
+            await maybeInst.GetLeft().RestartServer(true, forced);
     }
 
     [MessageHandler(Signature = "seed", Description = "获取当前世界的种子", ReplyException = true)]

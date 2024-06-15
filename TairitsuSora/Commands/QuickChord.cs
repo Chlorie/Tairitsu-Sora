@@ -21,12 +21,14 @@ public class QuickChord : GroupGame
     };
 
     [MessageHandler(Signature = "$time $flags", Description =
-        "开始答题，在播放和弦之前会先播放一个 C 音作为基准。\n" +
-        "  每道题时间限制为 [time = 10s~2min]；\n" +
-        "  可使用 [flags] 开启三种不同变体：\n" +
-        "    指明 i 时答案需考虑和弦转位（写出根音）；\n" +
-        "    指明 a 时不播放基准音；\n" +
-        "    指明 n 时用空格分隔的音名而非和弦名来作答。")]
+        """
+        开始答题，在播放和弦之前会先播放一个 C 音作为基准。
+          每道题时间限制为 [time = 10s~2min]；
+          可使用 [flags] 开启三种不同变体：
+            指明 i 时答案需考虑和弦转位（写出根音）；
+            指明 a 时不播放基准音；
+            指明 n 时用空格分隔的音名而非和弦名来作答。
+        """)]
     public ValueTask MainCommand(GroupMessageEventArgs ev, [ShowDefaultValueAs("30s")] TimeSpan? time = null, string? flags = null)
         => StartGame(ev, (e, _) => DoGameProcedureAsync(e, time ?? TimeSpan.FromSeconds(30), flags ?? ""));
 

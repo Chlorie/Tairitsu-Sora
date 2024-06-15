@@ -20,7 +20,9 @@ public record PingData(
 )
 {
     public record InfoData(
-        [property: JsonPropertyName("currentPlayers")] string CurrentPlayers,
+        [property: JsonPropertyName("currentPlayers")]
+        [property: JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
+        int OnlinePlayerCount,
         [property: JsonPropertyName("version")] string Version
     );
 

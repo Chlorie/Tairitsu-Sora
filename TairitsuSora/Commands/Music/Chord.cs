@@ -592,7 +592,7 @@ public struct Chord : IEquatable<Chord>, IEnumerable<NoteValue>
 
         private void FindExtensions()
         {
-            Span<int> naturalSize = stackalloc int[] { 2, 5, 9 };
+            Span<int> naturalSize = [2, 5, 9];
             for (int i = 0; i < 3; i++)
             {
                 if (TryRemove(_root.IntervalUp(naturalSize[i] - 1)))
@@ -826,7 +826,7 @@ public struct Chord : IEquatable<Chord>, IEnumerable<NoteValue>
                 default: throw new ArgumentOutOfRangeException();
             }
             // @formatter:on
-            Span<int> naturalSize = stackalloc int[] { 2, 5, 9 };
+            Span<int> naturalSize = [2, 5, 9];
             for (int i = 0; i < 3; i++)
             {
                 if ((_extensions[i] & Flat) != 0)

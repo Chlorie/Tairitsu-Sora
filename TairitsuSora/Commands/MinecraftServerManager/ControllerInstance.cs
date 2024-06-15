@@ -27,14 +27,27 @@ public class ControllerInstance : IDisposable
         }
     }
 
+    public bool EnableDailyBackup
+    {
+        get => Config.BackupConfig?.EnableDailyBackup ?? false;
+        set
+        {
+            if (Config.BackupConfig is null) return;
+            Config = Config with { BackupConfig = Config.BackupConfig with { EnableDailyBackup = value } };
+            _dailyBackupController.Enabled = value;
+        }
+    }
+
     public ControllerInstance(ControllerConfig config, long groupId, HttpClient client)
     {
         Config = config;
         GroupId = groupId;
-        var throttler = TimeLimiter.GetFromMaxCountByInterval(1, TimeSpan.FromMilliseconds(250));
-        _client = new HttpClientWrapper(client, throttler, _src.Token);
-        _minecraftMessagePoller = new TaskLooper(SyncMinecraftMessageToGroup, _src.Token);
-        _minecraftMessagePoller.Enabled = Config.EnableMessageForwarding;
+        var throttler = TimeLimiter.GetFromMaxCountByInterval(1, TimeSpan.FromMilliseconds(500));
+        _client = new HttpClientWrapper(client, throttler, Token);
+        _minecraftMessagePoller = new TaskLooper(SyncMinecraftMessageToGroup, Token);
+        _minecraftMessagePoller.Enabled = EnableMessageForwarding;
+        _dailyBackupController = new TaskLooper(AutoBackup, Token);
+        _dailyBackupController.Enabled = EnableDailyBackup;
     }
 
     public async ValueTask Run()
@@ -50,7 +63,7 @@ public class ControllerInstance : IDisposable
             // Sometimes the API returns 0.00% as the CPU usage, usually requerying it
             // should resolve the problem.
             if (data.ProcessInfo!.CpuUsage >= 0.01f || retry++ >= maxRetries) return data;
-            await Task.Delay(1000, Token);
+            await Task.Delay(2000, Token);
         }
     }
 
@@ -68,10 +81,14 @@ public class ControllerInstance : IDisposable
         return seed;
     }
 
-    public record BackupStatus(long TotalSize, int CurrentCount, int PrunedCount);
-
-    public async ValueTask<BackupStatus> MakeBackup(string worldDir, string backupDir, long maxTotalSize)
+    public async ValueTask MakeBackup()
     {
+        if (Config.BackupConfig is null)
+            throw new InvalidOperationException("无备份配置");
+
+        string worldDir = Config.BackupConfig.WorldDirectory;
+        string backupDir = Config.BackupConfig.BackupDirectory;
+        long maxTotalSize = Config.BackupConfig.MaxTotalSize;
         string zipPath = PathUtils.Combine(backupDir, $"{DateTime.Now:yyyyMMdd-HHmmss}.zip");
         await RunCommand("save-off",
             ["Automatic saving is now disabled", "Saving is already turned off"],
@@ -84,19 +101,100 @@ public class ControllerInstance : IDisposable
             TimeSpan.FromSeconds(10));
         await EnsureBackupDirectoryExists(backupDir);
         await CompressFiles(worldDir, zipPath, TimeSpan.FromMinutes(3));
-        return await PruneOldBackups(backupDir, maxTotalSize);
+
+        const long giga = 1_000_000_000;
+        var status = await PruneOldBackups(backupDir, maxTotalSize);
+        string msg = $"备份完成！留存 {status.CurrentCount} 个文件，删除旧文件 {status.PrunedCount} 个，" +
+                         $"文件共占 {(double)status.TotalSize / giga:0.00}GB";
+        await SendGroupMessage(msg);
     }
 
-    public void Dispose()
+    public async ValueTask RestartServer(bool reportWhenDone = false, bool forced = false)
     {
-        _src.Dispose();
+        async ValueTask<bool> EnsureServerRunning()
+        {
+            var ping = await Ping();
+            if (ping.Status == PingStatusCode.Running) return true;
+            if (reportWhenDone)
+                await SendGroupMessage(ping.Status switch
+                {
+                    PingStatusCode.Stopped => "服务器已停止",
+                    PingStatusCode.Stopping => "服务器正在关闭",
+                    PingStatusCode.Starting => "服务器正在启动",
+                    _ => "由于未知原因"
+                } + "，此时无法完成重启");
+            return false;
+        }
+
+        async ValueTask<bool> WaitServerStatus(PingStatusCode expectedStatus)
+        {
+            DateTime waitStart = DateTime.Now;
+            while (DateTime.Now - waitStart <= TimeSpan.FromMinutes(5))
+            {
+                if ((await Ping()).Status == expectedStatus) return true;
+                await Task.Delay(5000, Token);
+            }
+            return false;
+        }
+
+        async ValueTask NotifyOnlinePlayers()
+        {
+            if (((await Ping()).Info?.OnlinePlayerCount ?? 0) != 0)
+            {
+                await SendMessage("<Server> 服务器准备重启，请尽快停止正在运行的机械并下线，以免在重启过程中导致机械故障，谢谢配合");
+                DateTime warnStart = DateTime.Now;
+                while (DateTime.Now - warnStart <= TimeSpan.FromMinutes(5))
+                {
+                    if (((await Ping()).Info?.OnlinePlayerCount ?? 0) == 0) return;
+                    await Task.Delay(5000, Token);
+                }
+            }
+        }
+
+        ValueTask SendRequest(string api) =>
+            _client.Get(new UriBuilder($"{Config.ApiEndpoint}/api/protected_instance/{api}")
+            { Query = TemplateQuery.ToString() }.Uri);
+
+        async ValueTask DoRestart()
+        {
+            try
+            {
+                await SendRequest("restart");
+                return;
+            }
+            catch (Exception) { if (!forced) throw; }
+
+            // Forced and failed to restart
+            await SendRequest("stop").IgnoreException(false);
+            if (!await WaitServerStatus(PingStatusCode.Stopped))
+                await SendGroupMessage("强制重启时服务器未能在五分钟内关闭，请检查服务器运行状态");
+            await SendRequest("open");
+        }
+
+        if (!forced)
+        {
+            if (!await EnsureServerRunning()) return;
+            await NotifyOnlinePlayers();
+        }
+        await DoRestart();
+
+        if (!await WaitServerStatus(PingStatusCode.Running))
+            await SendGroupMessage("服务器未能在五分钟内完成重启，请检查服务器运行状态");
+        else if (reportWhenDone)
+            await SendGroupMessage("服务端已重启，请稍等片刻，待服务端准备完毕");
     }
+
+    public void Dispose() => _src.Dispose();
+
+    private record BackupStatus(long TotalSize, int CurrentCount, int PrunedCount);
 
     private const RegexOptions RegOptions =
         RegexOptions.Compiled | RegexOptions.Singleline | RegexOptions.NonBacktracking;
     private static readonly Regex ServerInfoPattern = new(
         @"\[\d{2}:\d{2}:\d{2}\] \[Server thread/INFO\]: (.*)", RegOptions);
     private static readonly Regex MessagePattern = new(@"<\w+> .*", RegOptions);
+    private static readonly Regex AdvancementPattern = new(
+        @"\w+ has (made the advancement|completed the challenge) \[.*\]", RegOptions);
     private static readonly Regex SeedOutputPattern = new(@"Seed: \[(.*)\]", RegOptions);
 
     // MCSM has a rate limit of 40ms per request. We apply a delay between the requests here to avoid that.
@@ -104,6 +202,7 @@ public class ControllerInstance : IDisposable
         CancellationTokenSource.CreateLinkedTokenSource(Application.Instance.CancellationToken);
     private HttpClientWrapper _client;
     private readonly TaskLooper _minecraftMessagePoller;
+    private readonly TaskLooper _dailyBackupController;
     private readonly OutputLogStream _chatStream = new();
 
     private CancellationToken Token => _src.Token;
@@ -143,14 +242,10 @@ public class ControllerInstance : IDisposable
 
     private async Task SyncGroupMessageToMinecraft()
     {
-        ValueTask SendGroupMessageToMinecraft(string _, GroupMessageEventArgs eventArgs)
-        {
-            if (eventArgs.SourceGroup.Id != GroupId || !_minecraftMessagePoller.Enabled)
-                return ValueTask.CompletedTask;
-            Dictionary<string, string> json = new()
-            { ["text"] = $"<{eventArgs.SenderInfo.Card}> {eventArgs.Message.MessageBody.Stringify()}" };
-            return RunCommand($"tellraw @a {JsonSerializer.Serialize(json)}");
-        }
+        ValueTask SendGroupMessageToMinecraft(string _, GroupMessageEventArgs eventArgs) =>
+            eventArgs.SourceGroup.Id != GroupId || !_minecraftMessagePoller.Enabled
+                ? ValueTask.CompletedTask
+                : SendMessage($"<{eventArgs.SenderInfo.Card}> {eventArgs.Message.MessageBody.Stringify()}");
 
         Application.Service.Event.OnGroupMessage += SendGroupMessageToMinecraft;
         try { await _src.Token.WaitUntilCanceled(); }
@@ -159,7 +254,11 @@ public class ControllerInstance : IDisposable
 
     private async ValueTask SyncMinecraftMessageToGroup(CancellationToken token)
     {
-        if (await GetOutputLog().ExceptionAsNull() is not { } log) return;
+        if (await GetOutputLog().ExceptionAsNull(logException: false) is not { } log)
+        {
+            await Task.Delay(2000, token);
+            return;
+        }
         (bool wasEmpty, string[] lines) = _chatStream.UpdateLines(log);
         if (!wasEmpty)
         {
@@ -169,12 +268,21 @@ public class ControllerInstance : IDisposable
                 var match = ServerInfoPattern.Match(line);
                 if (!match.Success) continue;
                 var text = match.Groups[1].Value;
-                if (MessagePattern.IsMatch(text)) messages.Add(text);
+                if (MessagePattern.IsMatch(text) || AdvancementPattern.IsMatch(text))
+                    messages.Add(text);
             }
             if (messages.Count > 0)
-                await Application.Api.SendGroupMessage(GroupId, string.Join("\n", messages));
+                await SendGroupMessage(string.Join("\n", messages));
         }
-        await Task.Delay(2000, token);
+        await Task.Delay(5000, token);
+    }
+
+    private async ValueTask AutoBackup(CancellationToken token)
+    {
+        DateTime nextBackup = DateTime.Today.AddHours(5); // 5:00 today
+        if (nextBackup <= DateTime.Now) nextBackup = nextBackup.AddDays(1); // 5:00 tomorrow
+        await Task.Delay(nextBackup - DateTime.Now, token);
+        await MakeBackup();
     }
 
     /// <summary>
@@ -220,6 +328,15 @@ public class ControllerInstance : IDisposable
     private ValueTask RunCommand(
         string command, IEnumerable<string> expectedOutput, TimeSpan timeout)
         => RunCommand(command, expectedOutput.Contains, timeout);
+
+    private ValueTask SendMessage(string message)
+    {
+        Dictionary<string, string> json = new() { ["text"] = message };
+        return RunCommand($"tellraw @a {JsonSerializer.Serialize(json)}");
+    }
+
+    private async ValueTask SendGroupMessage(string message) =>
+        await Application.Api.SendGroupMessage(GroupId, message);
 
     private async ValueTask<List<FileItemData>> ListDirectory(string path)
     {
