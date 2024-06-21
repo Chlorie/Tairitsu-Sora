@@ -41,6 +41,21 @@ public static class AsyncExtensions
     public static ValueTask<T?> ExceptionAsNull<T>(this ValueTask<T> task, bool logException = true) where T : class
         => ExceptionAsNull<T, Exception>(task, logException);
 
+    public static async ValueTask<bool> ExceptionAsFalse(this ValueTask task, bool logException = true)
+    {
+        try
+        {
+            await task;
+            return true;
+        }
+        catch (Exception e)
+        {
+            if (logException)
+                Log.Error(e, Application.AppName, "Exception caught and ignored");
+            return false;
+        }
+    }
+
     public static ValueTask IgnoreCancellation(this ValueTask task)
         => task.IgnoreException<OperationCanceledException>(false);
 
@@ -86,6 +101,28 @@ public static class AsyncExtensions
     {
         try { while (true) await taskFactory(); }
         catch (OperationCanceledException) { }
+    }
+
+    /// <summary>
+    /// Wait for a condition to be true.
+    /// </summary>
+    /// <param name="predicate">The condition.</param>
+    /// <param name="timeout">The total time to wait.</param>
+    /// <param name="interval">How much time to wait for each check.</param>
+    /// <param name="token">The cancellation token.</param>
+    /// <returns>Whether the condition turns true in time.</returns>
+    public static async ValueTask<bool> RetryUntil(
+        Func<ValueTask<bool>> predicate,
+        TimeSpan timeout, TimeSpan interval,
+        CancellationToken token = default)
+    {
+        DateTime end = DateTime.Now + timeout;
+        while (DateTime.Now < end)
+        {
+            if (await predicate()) return true;
+            await Task.Delay(interval, token);
+        }
+        return false;
     }
 
     public static async ValueTask<Process> RunAsync(

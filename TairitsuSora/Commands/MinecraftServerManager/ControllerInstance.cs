@@ -4,7 +4,11 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Web;
+using LanguageExt.UnitsOfMeasure;
 using RateLimiter;
+using Sora.Entities.Segment.DataModel;
+using Sora.Enumeration;
+using Sora.Enumeration.ApiType;
 using Sora.EventArgs.SoraEvent;
 using TairitsuSora.Core;
 using TairitsuSora.TairitsuSora.Commands.MinecraftServerManager;
@@ -42,16 +46,20 @@ public class ControllerInstance : IDisposable
     {
         Config = config;
         GroupId = groupId;
-        var throttler = TimeLimiter.GetFromMaxCountByInterval(1, TimeSpan.FromMilliseconds(500));
+        var throttler = TimeLimiter.GetFromMaxCountByInterval(1, 0.5.Seconds());
         _client = new HttpClientWrapper(client, throttler, Token);
+        _whitelistedPlayers = new AsyncCache<HashSet<string>>(GetWhitelistedPlayers, 8.Hours());
         _minecraftMessagePoller = new TaskLooper(SyncMinecraftMessageToGroup, Token);
         _minecraftMessagePoller.Enabled = EnableMessageForwarding;
         _dailyBackupController = new TaskLooper(AutoBackup, Token);
         _dailyBackupController.Enabled = EnableDailyBackup;
     }
 
-    public async ValueTask Run()
-        => await Task.WhenAll(SyncGroupMessageToMinecraft(), _minecraftMessagePoller.Run().AsTask());
+    public async ValueTask Run() => await Task.WhenAll(
+        SyncGroupMessageToMinecraft(),
+        _minecraftMessagePoller.Run().AsTask(),
+        _dailyBackupController.Run().AsTask()
+    );
 
     public async ValueTask<PingData> Ping(int maxRetries = 3)
     {
@@ -63,7 +71,7 @@ public class ControllerInstance : IDisposable
             // Sometimes the API returns 0.00% as the CPU usage, usually requerying it
             // should resolve the problem.
             if (data.ProcessInfo!.CpuUsage >= 0.01f || retry++ >= maxRetries) return data;
-            await Task.Delay(2000, Token);
+            await Task.Delay(2.Seconds(), Token);
         }
     }
 
@@ -77,7 +85,7 @@ public class ControllerInstance : IDisposable
             seed = match.Groups[1].Value;
             return true;
         }
-        await RunCommand("seed", MatchSeed, TimeSpan.FromSeconds(10));
+        await ExpectServerInfoLog(MatchSeed, 10.Seconds(), "seed");
         return seed;
     }
 
@@ -90,17 +98,11 @@ public class ControllerInstance : IDisposable
         string backupDir = Config.BackupConfig.BackupDirectory;
         long maxTotalSize = Config.BackupConfig.MaxTotalSize;
         string zipPath = PathUtils.Combine(backupDir, $"{DateTime.Now:yyyyMMdd-HHmmss}.zip");
-        await RunCommand("save-off",
-            ["Automatic saving is now disabled", "Saving is already turned off"],
-            TimeSpan.FromSeconds(10));
-        await RunCommand("save-all",
-            ["Saved the game"],
-            TimeSpan.FromMinutes(2));
-        await RunCommand("save-on",
-            ["Automatic saving is now enabled", "Saving is already turned on"],
-            TimeSpan.FromSeconds(10));
+        await ExpectServerInfoLog(["Automatic saving is now disabled", "Saving is already turned off"], 10.Seconds(), "save-off");
+        await ExpectServerInfoLog(["Saved the game"], 2.Minutes(), "save-all");
+        await ExpectServerInfoLog(["Automatic saving is now enabled", "Saving is already turned on"], 10.Seconds(), "save-on");
         await EnsureBackupDirectoryExists(backupDir);
-        await CompressFiles(worldDir, zipPath, TimeSpan.FromMinutes(3));
+        await CompressFiles(worldDir, zipPath, 5.Minutes());
 
         const long giga = 1_000_000_000;
         var status = await PruneOldBackups(backupDir, maxTotalSize);
@@ -126,30 +128,11 @@ public class ControllerInstance : IDisposable
             return false;
         }
 
-        async ValueTask<bool> WaitServerStatus(PingStatusCode expectedStatus)
-        {
-            DateTime waitStart = DateTime.Now;
-            while (DateTime.Now - waitStart <= TimeSpan.FromMinutes(5))
-            {
-                if ((await Ping()).Status == expectedStatus) return true;
-                await Task.Delay(5000, Token);
-            }
-            return false;
-        }
+        async ValueTask<bool> WaitServerStatus(PingStatusCode expectedStatus) =>
+            await AsyncExtensions.RetryUntil(async () => (await Ping()).Status == expectedStatus,
+                5.Minutes(), 5.Seconds(), Token);
 
-        async ValueTask NotifyOnlinePlayers()
-        {
-            if (((await Ping()).Info?.OnlinePlayerCount ?? 0) != 0)
-            {
-                await SendMessage("<Server> 服务器准备重启，请尽快停止正在运行的机械并下线，以免在重启过程中导致机械故障，谢谢配合");
-                DateTime warnStart = DateTime.Now;
-                while (DateTime.Now - warnStart <= TimeSpan.FromMinutes(5))
-                {
-                    if (((await Ping()).Info?.OnlinePlayerCount ?? 0) == 0) return;
-                    await Task.Delay(5000, Token);
-                }
-            }
-        }
+        async ValueTask<bool> CheckNoPlayerOnline() => (await Ping()).Info?.OnlinePlayerCount is 0 or null;
 
         ValueTask SendRequest(string api) =>
             _client.Get(new UriBuilder($"{Config.ApiEndpoint}/api/protected_instance/{api}")
@@ -174,14 +157,22 @@ public class ControllerInstance : IDisposable
         if (!forced)
         {
             if (!await EnsureServerRunning()) return;
-            await NotifyOnlinePlayers();
+            if (!await CheckNoPlayerOnline())
+            {
+                await SendMessage("<Server> 服务器准备重启，请尽快停止正在运行的机械并下线，" +
+                                  "以免在重启过程中导致机械故障，谢谢配合。请注意即使仍有玩家在线，五分钟后会强制重启。");
+                await AsyncExtensions.RetryUntil(CheckNoPlayerOnline, 5.Minutes(), 5.Seconds(), Token);
+            }
         }
         await DoRestart();
 
         if (!await WaitServerStatus(PingStatusCode.Running))
-            await SendGroupMessage("服务器未能在五分钟内完成重启，请检查服务器运行状态");
+            await SendGroupMessage("已发送服务端重启请求，但五分钟内服务器未能正常启动，请检查服务器运行状态");
+        else if (!await ExpectServerInfoLog(line => ServerDoneStartingPattern.Match(line).Success, 5.Minutes())
+                     .ExceptionAsFalse(logException: false))
+            await SendGroupMessage("服务端正在启动，但五分钟内未能完成准备，请检查服务器运行状态");
         else if (reportWhenDone)
-            await SendGroupMessage("服务端已重启，请稍等片刻，待服务端准备完毕");
+            await SendGroupMessage("服务端重启完毕！");
     }
 
     public void Dispose() => _src.Dispose();
@@ -193,14 +184,15 @@ public class ControllerInstance : IDisposable
     private static readonly Regex ServerInfoPattern = new(
         @"\[\d{2}:\d{2}:\d{2}\] \[Server thread/INFO\]: (.*)", RegOptions);
     private static readonly Regex MessagePattern = new(@"<\w+> .*", RegOptions);
-    private static readonly Regex AdvancementPattern = new(
-        @"\w+ has (made the advancement|completed the challenge) \[.*\]", RegOptions);
     private static readonly Regex SeedOutputPattern = new(@"Seed: \[(.*)\]", RegOptions);
+    private static readonly Regex ServerDoneStartingPattern = new(@"Done \(.*s\)! For help, type ""help""", RegOptions);
+    private static readonly Regex WhitelistedPlayersPattern = new(@"There are \d+ whitelisted player\(s\): (.*)", RegOptions);
 
     // MCSM has a rate limit of 40ms per request. We apply a delay between the requests here to avoid that.
     private CancellationTokenSource _src =
         CancellationTokenSource.CreateLinkedTokenSource(Application.Instance.CancellationToken);
     private HttpClientWrapper _client;
+    private readonly AsyncCache<HashSet<string>> _whitelistedPlayers;
     private readonly TaskLooper _minecraftMessagePoller;
     private readonly TaskLooper _dailyBackupController;
     private readonly OutputLogStream _chatStream = new();
@@ -242,10 +234,34 @@ public class ControllerInstance : IDisposable
 
     private async Task SyncGroupMessageToMinecraft()
     {
-        ValueTask SendGroupMessageToMinecraft(string _, GroupMessageEventArgs eventArgs) =>
-            eventArgs.SourceGroup.Id != GroupId || !_minecraftMessagePoller.Enabled
-                ? ValueTask.CompletedTask
-                : SendMessage($"<{eventArgs.SenderInfo.Card}> {eventArgs.Message.MessageBody.Stringify()}");
+        async ValueTask SendGroupMessageToMinecraft(string _, GroupMessageEventArgs eventArgs)
+        {
+            if (eventArgs.SourceGroup.Id != GroupId || !_minecraftMessagePoller.Enabled) return;
+            string senderName = eventArgs.SenderInfo.Card.EmptyAsNull() ?? eventArgs.SenderInfo.Nick;
+            var body = eventArgs.Message.MessageBody;
+            if (body.ElementAtOrDefault(0) is not { MessageType: SegmentType.Reply } segment ||
+                await Application.Api.GetMessage(((ReplySegment)segment.Data).Target) is not
+                {
+                    apiStatus.RetCode: ApiStatusType.Ok,
+                    message: { } replied,
+                    sender: { } repliedSender,
+                    isGroupMsg: true
+                })
+            {
+                await SendMessage($"<{senderName}> {eventArgs.Message.MessageBody.Stringify()}");
+                return;
+            }
+            int start = body.ElementAtOrDefault(1) is { Data: AtSegment at } &&
+                        at.Target == repliedSender.Id.ToString() ? 2 : 1;
+            string repliedSenderName = "";
+            if (repliedSender.Id != Application.Instance.SelfId)
+            {
+                var member = (await Application.Api.GetGroupMemberInfo(eventArgs.SourceGroup.Id, repliedSender.Id)).memberInfo;
+                repliedSenderName = $"<{member.Card.EmptyAsNull() ?? member.Nick}> ";
+            }
+            await SendMessage($"<{senderName}> Re: {repliedSenderName}{replied.MessageBody.Stringify()}\n" +
+                              eventArgs.Message.MessageBody.Stringify(skip: start));
+        }
 
         Application.Service.Event.OnGroupMessage += SendGroupMessageToMinecraft;
         try { await _src.Token.WaitUntilCanceled(); }
@@ -256,25 +272,35 @@ public class ControllerInstance : IDisposable
     {
         if (await GetOutputLog().ExceptionAsNull(logException: false) is not { } log)
         {
-            await Task.Delay(2000, token);
+            await Task.Delay(2.Seconds(), token);
             return;
         }
         (bool wasEmpty, string[] lines) = _chatStream.UpdateLines(log);
-        if (!wasEmpty)
+        if (!wasEmpty && lines.Length != 0)
         {
             List<string> messages = [];
+            HashSet<string>? players = null;
             foreach (string line in lines)
             {
                 var match = ServerInfoPattern.Match(line);
                 if (!match.Success) continue;
                 var text = match.Groups[1].Value;
-                if (MessagePattern.IsMatch(text) || AdvancementPattern.IsMatch(text))
-                    messages.Add(text);
+                if (!MessagePattern.IsMatch(text))
+                {
+                    players ??= await _whitelistedPlayers.Get();
+                    if (text.Split(' ', 2) is not [var name, var rest] ||
+                        !players.Contains(name) ||
+                        rest.StartsWith("lost connection") ||
+                        rest.StartsWith("joined the game") ||
+                        rest.StartsWith("left the game"))
+                        continue;
+                }
+                messages.Add(text);
             }
             if (messages.Count > 0)
                 await SendGroupMessage(string.Join("\n", messages));
         }
-        await Task.Delay(5000, token);
+        await Task.Delay(5.Seconds(), token);
     }
 
     private async ValueTask AutoBackup(CancellationToken token)
@@ -299,17 +325,19 @@ public class ControllerInstance : IDisposable
     }
 
     /// <summary>
-    /// Run a command in the Minecraft server.
-    /// The output log will be checked with the matcher. The command is considered
-    /// successful if any of the output lines matches.
+    /// Check the output log for a specific pattern, and wait until it appears.
+    /// Optionally run a command before checking the output.
     /// </summary>
-    private async ValueTask RunCommand(
-        string command, Func<string, bool> outputMatcher, TimeSpan timeout)
+    /// <param name="outputMatcher">Predicate to check the output.</param>
+    /// <param name="timeout">The maximum time to wait.</param>
+    /// <param name="command">The optional command to run.</param>
+    private async ValueTask ExpectServerInfoLog(
+        Func<string, bool> outputMatcher, TimeSpan timeout, string? command = null)
     {
         DateTime deadline = DateTime.Now + timeout;
         OutputLogStream log = new();
         log.UpdateLines(await GetOutputLog());
-        await RunCommand(command);
+        if (command is not null) await RunCommand(command);
 
         bool FilteredMatch(string line)
         {
@@ -325,9 +353,9 @@ public class ControllerInstance : IDisposable
         await RetryUntil(CheckLog, deadline);
     }
 
-    private ValueTask RunCommand(
-        string command, IEnumerable<string> expectedOutput, TimeSpan timeout)
-        => RunCommand(command, expectedOutput.Contains, timeout);
+    private ValueTask ExpectServerInfoLog(
+        IEnumerable<string> expectedOutput, TimeSpan timeout, string? command = null)
+        => ExpectServerInfoLog(expectedOutput.Contains, timeout, command);
 
     private ValueTask SendMessage(string message)
     {
@@ -418,7 +446,7 @@ public class ControllerInstance : IDisposable
     private async ValueTask RetryUntil(
         Func<ValueTask<bool>> action, DateTime deadline, TimeSpan? firstIter = null, float growthFactor = 1.5f)
     {
-        TimeSpan thisIter = firstIter ?? TimeSpan.FromSeconds(1);
+        TimeSpan thisIter = firstIter ?? 1.Seconds();
         while (true)
         {
             TimeSpan remaining = deadline - DateTime.Now;
@@ -429,5 +457,19 @@ public class ControllerInstance : IDisposable
             catch (TaskCanceledException) { throw new TimeoutException(); }
             thisIter *= growthFactor;
         }
+    }
+
+    private async ValueTask<HashSet<string>> GetWhitelistedPlayers()
+    {
+        string list = "";
+        bool MatchSeed(string line)
+        {
+            var match = WhitelistedPlayersPattern.Match(line);
+            if (!match.Success) return false;
+            list = match.Groups[1].Value;
+            return true;
+        }
+        await ExpectServerInfoLog(MatchSeed, 10.Seconds(), "whitelist list");
+        return list.Split(',').Select(s => s.Trim()).ToHashSet();
     }
 }

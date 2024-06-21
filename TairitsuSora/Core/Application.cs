@@ -1,5 +1,6 @@
 ﻿using System.Reflection;
 using System.Text.Json.Nodes;
+using LanguageExt.UnitsOfMeasure;
 using Sora;
 using Sora.Entities.Base;
 using Sora.Interfaces;
@@ -106,8 +107,8 @@ public class Application : IDisposable
             AccessToken = _config.OneBotConfig.AccessToken,
             Host = _config.OneBotConfig.Host,
             Port = _config.OneBotConfig.Port,
-            ReconnectTimeOut = TimeSpan.FromSeconds(20),
-            HeartBeatTimeOut = TimeSpan.FromSeconds(20)
+            ReconnectTimeOut = 20.Seconds(),
+            HeartBeatTimeOut = 20.Seconds()
         });
         _eventChannel = new EventChannel(_service);
     }
@@ -168,7 +169,7 @@ public class Application : IDisposable
     {
         async ValueTask LoopBody()
         {
-            await Task.Delay(TimeSpan.FromMinutes(30), CancellationToken);
+            await Task.Delay(20.Minutes(), CancellationToken);
             await SyncAndSaveConfig();
         }
 

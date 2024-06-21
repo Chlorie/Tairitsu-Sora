@@ -1,4 +1,5 @@
-﻿using Sora.Entities;
+﻿using LanguageExt.UnitsOfMeasure;
+using Sora.Entities;
 using Sora.Entities.Info;
 using Sora.Entities.Segment.DataModel;
 using Sora.Enumeration.EventParamsType;
@@ -23,8 +24,9 @@ public class Admin : Command
         if (await CheckMutability(ev, at) is not
             { muteTarget: var target, isPunishment: var isPunishment })
             return;
-        TimeSpan min = TimeSpan.FromMinutes(isPunishment ? 5 : 1);
-        TimeSpan max = TimeSpan.FromDays(30) - TimeSpan.FromSeconds(1);
+
+        TimeSpan min = (isPunishment ? 5 : 1).Minutes();
+        TimeSpan max = 30.Days() - 1.Seconds();
         if (timeSpan < min) timeSpan = min;
         if (timeSpan > max) timeSpan = max;
         await ev.SourceGroup.EnableGroupMemberMute(target, (long)timeSpan.TotalSeconds);

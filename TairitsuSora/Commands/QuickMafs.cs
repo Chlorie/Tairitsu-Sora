@@ -1,5 +1,6 @@
 ﻿using System.Globalization;
 using System.Numerics;
+using LanguageExt.UnitsOfMeasure;
 using Sora.EventArgs.SoraEvent;
 using TairitsuSora.Core;
 using TairitsuSora.TairitsuSora.Commands.GameCommand;
@@ -21,7 +22,7 @@ public class QuickMafs : GroupGame
 
     [MessageHandler(Signature = "$time", Description = "开始答题，每道题作答时间为 [time = 5~30s]")]
     public ValueTask MainCommand(GroupMessageEventArgs ev, [ShowDefaultValueAs("10s")] TimeSpan? time = null)
-        => StartGame(ev, (e, _) => GameProcedure(e, time ?? TimeSpan.FromSeconds(10)));
+        => StartGame(ev, (e, _) => GameProcedure(e, time ?? 10.Seconds()));
 
     private async ValueTask GameProcedure(GroupMessageEventArgs ev, TimeSpan time)
     {

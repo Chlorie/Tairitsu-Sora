@@ -1,4 +1,5 @@
-﻿using TairitsuSora.Core;
+﻿using LanguageExt.UnitsOfMeasure;
+using TairitsuSora.Core;
 
 namespace TairitsuSora.Commands;
 
@@ -16,7 +17,7 @@ public class CleanTemp : Command
         while (true)
         {
             try { Loop(); } catch { /* ignored */ }
-            await Task.Delay(TimeSpan.FromHours(1), Application.Instance.CancellationToken);
+            await Task.Delay(1.Hours(), Application.Instance.CancellationToken);
         }
         // ReSharper disable once FunctionNeverReturns
     }
@@ -27,7 +28,7 @@ public class CleanTemp : Command
         if (!tempDir.Exists) return;
         foreach (var file in tempDir.EnumerateFiles())
         {
-            if (DateTime.Now - file.LastWriteTime > TimeSpan.FromMinutes(30))
+            if (DateTime.Now - file.LastWriteTime > 30.Minutes().ToTimeSpan())
                 file.Delete();
         }
     }

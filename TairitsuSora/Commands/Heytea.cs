@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Nodes;
+using LanguageExt.UnitsOfMeasure;
 using TairitsuSora.Core;
 using TairitsuSora.Utils;
 
@@ -33,7 +34,7 @@ public class Heytea : Command
         string[] Labels
     );
 
-    private static readonly TimeSpan UpdateInterval = TimeSpan.FromHours(8);
+    private static readonly TimeSpan UpdateInterval = 8.Hours();
     private HttpClient _client = new();
     private AsyncLock _lock = new();
     private Item[]? _cache;

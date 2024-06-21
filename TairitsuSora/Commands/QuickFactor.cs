@@ -1,6 +1,7 @@
 ﻿using Sora.EventArgs.SoraEvent;
 using System.Numerics;
 using System.Text;
+using LanguageExt.UnitsOfMeasure;
 using TairitsuSora.Core;
 using TairitsuSora.TairitsuSora.Commands.GameCommand;
 using TairitsuSora.Utils;
@@ -24,7 +25,7 @@ public class QuickFactor : GroupGame
     [MessageHandler(Signature = "$maxp $time", Description =
         "开始答题，[maxp = 5..1000] 为最大可能的素因子，[timeSpan = 5s..1min] 为每题给的时间")]
     public ValueTask MainCommand(GroupMessageEventArgs ev, int maxp = 7, [ShowDefaultValueAs("10s")] TimeSpan? time = null)
-        => StartGame(ev, (e, _) => GameProcedure(e, maxp, time ?? TimeSpan.FromSeconds(10)));
+        => StartGame(ev, (e, _) => GameProcedure(e, maxp, time ?? 10.Seconds()));
 
     private const int MaxPrime = 1000;
     private static int[] _primes = FindPrimesSieve(MaxPrime);

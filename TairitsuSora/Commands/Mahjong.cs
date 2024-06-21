@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using LanguageExt.UnitsOfMeasure;
 using TairitsuSora.Core;
 using TairitsuSora.Utils;
 
@@ -27,7 +28,7 @@ public class Mahjong : Command
             ArgumentList = { hand }
         };
         var proc = await procInfo.RunAsync(
-            TimeSpan.FromMinutes(1), Application.Instance.CancellationToken);
+            1.Minutes(), Application.Instance.CancellationToken);
         return await proc.StandardOutput.ReadToEndAsync();
     }
 }

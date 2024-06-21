@@ -2,6 +2,7 @@
 using Sora.EventArgs.SoraEvent;
 using System.Diagnostics;
 using System.Text;
+using LanguageExt.UnitsOfMeasure;
 using TairitsuSora.Commands.Music;
 using TairitsuSora.Core;
 using TairitsuSora.TairitsuSora.Commands.GameCommand;
@@ -30,7 +31,7 @@ public class QuickChord : GroupGame
             指明 n 时用空格分隔的音名而非和弦名来作答。
         """)]
     public ValueTask MainCommand(GroupMessageEventArgs ev, [ShowDefaultValueAs("30s")] TimeSpan? time = null, string? flags = null)
-        => StartGame(ev, (e, _) => DoGameProcedureAsync(e, time ?? TimeSpan.FromSeconds(30), flags ?? ""));
+        => StartGame(ev, (e, _) => DoGameProcedureAsync(e, time ?? 30.Seconds(), flags ?? ""));
 
     private async ValueTask DoGameProcedureAsync(GroupMessageEventArgs ev, TimeSpan time, string flags)
     {
@@ -61,13 +62,13 @@ public class QuickChord : GroupGame
     private async Task RunQuizAsync(GroupMessageEventArgs ev, TimeSpan time,
         bool inversion, bool absolute, bool nonChord)
     {
-        if (time.TotalSeconds > 120)
+        if (time > 2.Minutes().ToTimeSpan())
         {
             await ev.QuoteReply("两分钟连一首歌都听完了你怎么连个和弦都认不出来呢？？？");
             return;
         }
-        bool tooShort = time.TotalSeconds < 10;
-        if (tooShort) time = TimeSpan.FromSeconds(10);
+        bool tooShort = time < 10.Seconds().ToTimeSpan();
+        if (tooShort) time = 10.Seconds();
 
         Func<Chord>[] levels =
         [

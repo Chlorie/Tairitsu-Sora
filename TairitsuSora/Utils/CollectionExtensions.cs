@@ -8,6 +8,8 @@ public static class CollectionExtensions
         return collection.ToList();
     }
 
+    public static string? EmptyAsNull(this string? str) => string.IsNullOrEmpty(str) ? null : str;
+
     public static string[] SplitByWhitespaces(this string str) =>
         str.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 

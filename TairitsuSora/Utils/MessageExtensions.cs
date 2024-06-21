@@ -35,7 +35,8 @@ public static class MessageExtensions
         _ => throw new ArgumentOutOfRangeException()
     };
 
-    public static string Stringify(this MessageBody msg) => string.Concat(msg.Select(Stringify));
+    public static string Stringify(this MessageBody msg, int skip = 0)
+        => string.Concat(msg.Skip(skip).Select(seg => seg.Stringify()));
 
     public static string? GetText(this SoraSegment segment)
         => segment.MessageType != SegmentType.Text ? null : ((TextSegment)segment.Data).Content;

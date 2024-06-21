@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using LanguageExt.UnitsOfMeasure;
 using MeltySynth;
 using Sora.Entities;
 using Sora.EventArgs.SoraEvent;
@@ -28,7 +29,7 @@ public class Piano : Command
 
         string path = File.Exists($"temp/{guid}.midi") ? $"temp/{guid}.midi" : $"temp/{guid}.mid";
         MidiFile midi = new(path);
-        if (midi.Length > TimeSpan.FromMinutes(4))
+        if (midi.Length > 4.Minutes().ToTimeSpan())
         {
             await ev.QuoteReply("乐谱生成的对应音频过长。");
             return;
@@ -60,8 +61,7 @@ public class Piano : Command
             RedirectStandardError = true,
             ArgumentList = { hkrFile, lyFile }
         };
-        var proc = await procInfo.RunAsync(
-            TimeSpan.FromMinutes(1), Application.Instance.CancellationToken);
+        var proc = await procInfo.RunAsync(1.Minutes(), Application.Instance.CancellationToken);
         var msg = await proc.StandardError.ReadToEndAsync();
         if (msg != "") throw new ArgumentException(msg);
     }
@@ -77,6 +77,5 @@ public class Piano : Command
                 "-fpng", "-dcrop", "-dno-print-pages",
                 "-o", $"temp/{guid}", $"temp/{guid}.ly"
             }
-        }.RunAsync(
-            TimeSpan.FromMinutes(1), Application.Instance.CancellationToken);
+        }.RunAsync(1.Minutes(), Application.Instance.CancellationToken);
 }

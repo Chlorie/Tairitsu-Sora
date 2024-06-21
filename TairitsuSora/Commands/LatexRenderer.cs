@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
+using LanguageExt.UnitsOfMeasure;
 using Sora.Entities;
 using Sora.EventArgs.SoraEvent;
 using TairitsuSora.Core;
@@ -47,7 +48,7 @@ public class LatexRenderer : Command
             UseShellExecute = false,
             WorkingDirectory = "temp",
             ArgumentList = { "-xelatex", "-interaction=nonstopmode", $"{guid}.tex" }
-        }.RunAsync(TimeSpan.FromSeconds(40), Application.Instance.CancellationToken);
+        }.RunAsync(40.Seconds(), Application.Instance.CancellationToken);
         if (!File.Exists($"temp/{guid}.pdf")) return;
 
         string convertExe = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "magick" : "convert";
@@ -63,7 +64,7 @@ public class LatexRenderer : Command
                 "-trim", "-bordercolor", "white", "-border", "15",
                 "+repage", $"temp/{guid}.png"
             }
-        }.RunAsync(TimeSpan.FromSeconds(20), Application.Instance.CancellationToken);
+        }.RunAsync(20.Seconds(), Application.Instance.CancellationToken);
         if (!File.Exists($"temp/{guid}.png")) return;
 
         await eventArgs.Reply(new MessageBody().Image(await File.ReadAllBytesAsync($"temp/{guid}.png")));

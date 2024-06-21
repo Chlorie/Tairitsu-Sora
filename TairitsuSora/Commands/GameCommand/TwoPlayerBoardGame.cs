@@ -1,4 +1,5 @@
-﻿using OneOf;
+﻿using LanguageExt.UnitsOfMeasure;
+using OneOf;
 using Sora.Entities;
 using Sora.EventArgs.SoraEvent;
 using TairitsuSora.Core;
@@ -15,7 +16,7 @@ public abstract class TwoPlayerBoardGame : GroupGame
         await ev.QuoteReply("已发起对局请求，2 分钟内回复 “a” 即可开始对局。");
         var accept = await Application.EventChannel.WaitNextGroupMessage(
             next => next.FromSameGroup(ev) && next.Message.MessageBody.GetIfOnlyText() == "a",
-            TimeSpan.FromMinutes(2));
+            2.Minutes());
         if (accept is null)
         {
             await ev.QuoteReply("2 分钟内无人接受挑战，自动取消。");
