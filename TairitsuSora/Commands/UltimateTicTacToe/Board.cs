@@ -13,7 +13,7 @@ public class Board
             if (value.Length != 2)
                 throw new ArgumentException("Coordinate representations should be of length 2");
             if (value[0] is < 'a' or > 'i')
-                throw new ArgumentException($"Rank should be from a to h, but got {value[0]}");
+                throw new ArgumentException($"Rank should be from a to i, but got {value[0]}");
             if (value[1] is < '1' or > '9')
                 throw new ArgumentException($"File should be from 1 to 8, but got {value[1]}");
             return new Coords(value[1] - '1', value[0] - 'a');

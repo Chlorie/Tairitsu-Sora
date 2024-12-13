@@ -28,9 +28,9 @@ public class ChessGame : TwoPlayerBoardGame, IDisposable
     }
 
     [MessageHandler(Description = $"发起对局请求。用代数记谱法输入棋步。{SubcommandDescription}")]
-    public ValueTask StartGame(GroupMessageEventArgs ev) => StartGame(ev, DoGameProcedureAsync);
+    public ValueTask StartGame(GroupMessageEventArgs ev) => StartGame(ev, GameProcedureFactory(CreateGameState));
 
-    protected override TwoPlayerBoardGameState CreateGameState(long group, long player1, long player2)
+    private TwoPlayerBoardGameState CreateGameState(long group, long player1, long player2)
         => new GameState(group, player1, player2, _drawerRes);
 
     private class GameState(long group, long player1, long player2, BoardDrawerResources drawerRes)
@@ -48,15 +48,7 @@ public class ChessGame : TwoPlayerBoardGame, IDisposable
         public override ValueTask<byte[]> GenerateBoardImage() => _drawer.DrawAsPng(_game,
             _lastMove is { Src: var src, Dst: var dst } ? [src, dst] : []);
 
-        public override MoveResult PlayMove(string message)
-        {
-            try { _lastMove = _game.ParseMove(message); }
-            catch (Exception ex) { return new Illegal(DescribeException(ex)); }
-            _lastMoveNotation = _game.NotateMove(_lastMove.Value);
-            var outcome = _game.PlayMove(_lastMove.Value);
-            if (outcome != Game.Outcome.None) return new Terminal(DescribeOutcome(outcome));
-            return new Ongoing();
-        }
+        public override ValueTask<MoveResult> PlayMove(string message) => ValueTask.FromResult(PlayMoveImpl(message));
 
         public override string DescribeState()
         {
@@ -96,6 +88,16 @@ public class ChessGame : TwoPlayerBoardGame, IDisposable
             Game.Outcome.BlackWin => "黑棋胜出",
             _ => ""
         };
+
+        private MoveResult PlayMoveImpl(string message)
+        {
+            try { _lastMove = _game.ParseMove(message); }
+            catch (Exception ex) { return new Illegal(DescribeException(ex)); }
+            _lastMoveNotation = _game.NotateMove(_lastMove.Value);
+            var outcome = _game.PlayMove(_lastMove.Value);
+            if (outcome != Game.Outcome.None) return new Terminal(DescribeOutcome(outcome));
+            return new Ongoing();
+        }
     }
 
     private HttpClient _client;

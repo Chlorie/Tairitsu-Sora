@@ -17,9 +17,9 @@ public class UltimateTicTacToeGame : TwoPlayerBoardGame
     };
 
     [MessageHandler(Description = $"发起对局请求。输入坐标来下棋，{SubcommandDescription}")]
-    public ValueTask StartGame(GroupMessageEventArgs ev) => StartGame(ev, DoGameProcedureAsync);
+    public ValueTask StartGame(GroupMessageEventArgs ev) => StartGame(ev, GameProcedureFactory(CreateGameState));
 
-    protected override TwoPlayerBoardGameState CreateGameState(long group, long player1, long player2)
+    private TwoPlayerBoardGameState CreateGameState(long group, long player1, long player2)
         => new GameState(group, player1, player2);
 
     private class GameState(long group, long player1, long player2)
@@ -35,23 +35,7 @@ public class UltimateTicTacToeGame : TwoPlayerBoardGame
         public override bool IsMoveReply(string text) => text is [>= 'a' and <= 'i', >= '1' and <= '9'];
 
         public override ValueTask<byte[]> GenerateBoardImage() => ValueTask.FromResult(_drawer.DrawBoard(_board, true));
-
-        public override MoveResult PlayMove(string message)
-        {
-            Board.Coords coords = Board.Coords.FromString(message);
-            if (!_board.PlayableAt(coords))
-                return new Illegal("目前不可在此处落子");
-            _board.PlayAt(coords);
-            if (_board.Result != Board.CellType.None)
-                return new Terminal(_board.Result switch
-                {
-                    Board.CellType.Circle => "画圈一方胜出",
-                    Board.CellType.Cross => "画叉一方胜出",
-                    Board.CellType.Tie => "双方打成平局",
-                    _ => throw new ArgumentOutOfRangeException()
-                });
-            return new Ongoing();
-        }
+        public override ValueTask<MoveResult> PlayMove(string message) => ValueTask.FromResult(PlayMoveImpl(message));
 
         public override string DescribeState()
         {
@@ -74,5 +58,22 @@ public class UltimateTicTacToeGame : TwoPlayerBoardGame
 
         private Board _board = new();
         private BoardDrawer _drawer = new();
+
+        private MoveResult PlayMoveImpl(string message)
+        {
+            Board.Coords coords = Board.Coords.FromString(message);
+            if (!_board.PlayableAt(coords))
+                return new Illegal("目前不可在此处落子");
+            _board.PlayAt(coords);
+            if (_board.Result != Board.CellType.None)
+                return new Terminal(_board.Result switch
+                {
+                    Board.CellType.Circle => "画圈一方胜出",
+                    Board.CellType.Cross => "画叉一方胜出",
+                    Board.CellType.Tie => "双方打成平局",
+                    _ => throw new ArgumentOutOfRangeException()
+                });
+            return new Ongoing();
+        }
     }
 }

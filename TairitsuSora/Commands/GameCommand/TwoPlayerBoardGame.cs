@@ -11,7 +11,35 @@ public abstract class TwoPlayerBoardGame : GroupGame
 {
     protected const string SubcommandDescription = "输入 s 重新显示棋盘，输入 r 认输，输入 d 求和或同意求和。";
 
-    protected async ValueTask DoGameProcedureAsync(GroupMessageEventArgs ev, CancellationToken _)
+    protected static Func<GroupMessageEventArgs, CancellationToken, ValueTask> GameProcedureFactory(
+        Func<long, long, long, TwoPlayerBoardGameState> gameStateFactory, long? specifiedTarget = null) =>
+        GameProcedureFactory((group, p1, p2) =>
+            ValueTask.FromResult(gameStateFactory(group, p1, p2)), specifiedTarget);
+
+    protected static Func<GroupMessageEventArgs, CancellationToken, ValueTask> GameProcedureFactory(
+        Func<long, long, long, ValueTask<TwoPlayerBoardGameState>> gameStateFactory, long? specifiedTarget = null)
+    {
+        async ValueTask GameProcedureAsync(GroupMessageEventArgs ev, CancellationToken _)
+        {
+            long p1, p2;
+            // TODO: do not accept by default in the case that the specified target is not the bot
+            if (specifiedTarget is { } target)
+                (p1, p2) = (ev.SenderInfo.UserId, target);
+            else
+            {
+                var players = await GetPlayersAsync(ev);
+                if (players is null) return;
+                (p1, p2) = players.Value;
+            }
+            if (Random.Shared.Next(2) == 0) (p1, p2) = (p2, p1);
+            TwoPlayerBoardGameState state = await gameStateFactory(ev.SourceGroup.Id, p1, p2);
+            await PlayGameAsync(state);
+        }
+
+        return GameProcedureAsync;
+    }
+
+    private static async ValueTask<(long p1, long p2)?> GetPlayersAsync(GroupMessageEventArgs ev)
     {
         await ev.QuoteReply("已发起对局请求，2 分钟内回复 “a” 即可开始对局。");
         var accept = await Application.EventChannel.WaitNextGroupMessage(
@@ -20,23 +48,19 @@ public abstract class TwoPlayerBoardGame : GroupGame
         if (accept is null)
         {
             await ev.QuoteReply("2 分钟内无人接受挑战，自动取消。");
-            return;
+            return null;
         }
         if (accept.FromSameMember(ev))
         {
             await accept.QuoteReply("您好，我这里不提供左右互搏服务呢。");
-            return;
+            return null;
         }
-        (long p1, long p2) = (ev.SenderInfo.UserId, accept.SenderInfo.UserId);
-        if (Random.Shared.Next(2) == 0) (p1, p2) = (p2, p1);
-        await PlayGameAsync(ev.SourceGroup.Id, p1, p2);
+        return (ev.SenderInfo.UserId, accept.SenderInfo.UserId);
     }
 
-    protected abstract TwoPlayerBoardGameState CreateGameState(long group, long player1, long player2);
-
-    private async ValueTask PlayGameAsync(long group, long player1, long player2)
+    private static async ValueTask PlayGameAsync(TwoPlayerBoardGameState state)
     {
-        var state = CreateGameState(group, player1, player2);
+        long group = state.GroupId, player1 = state.Player1Id, player2 = state.Player2Id;
         using var guard = new MaybeDisposable(state);
 
         await Application.Api.SendGroupMessage(group, new MessageBody()
@@ -70,7 +94,8 @@ public abstract class TwoPlayerBoardGame : GroupGame
                         string playerNoun = isPlayer1 ? state.Player1Noun : state.Player2Noun;
                         await Application.Api.SendGroupMessage(group, new MessageBody()
                             .Text($"由于{playerNoun}认输，对局结束。最终状态：")
-                            .Image(await state.GenerateBoardImage()));
+                            .Image(await state.GenerateBoardImage())
+                            .Text(state.GameSummary));
                         return;
                     }
                     case "s":
@@ -86,7 +111,8 @@ public abstract class TwoPlayerBoardGame : GroupGame
                         {
                             await Application.Api.SendGroupMessage(group, new MessageBody()
                                 .Text("由于双方同意平局，对局结束。最终状态：")
-                                .Image(await state.GenerateBoardImage()));
+                                .Image(await state.GenerateBoardImage())
+                                .Text(state.GameSummary));
                             return;
                         }
                         await Application.Api.SendGroupMessage(group, new MessageBody()
@@ -99,14 +125,15 @@ public abstract class TwoPlayerBoardGame : GroupGame
                     await ev.QuoteReply("你先别急");
                     continue;
                 }
-                var moveResult = state.PlayMove(text);
+                var moveResult = await state.PlayMove(text);
                 switch (moveResult.Index)
                 {
                     case 0: await ShowBoard(); continue; // Ongoing
                     case 1: // Terminal
                         await Application.Api.SendGroupMessage(group, new MessageBody()
                             .Text($"{moveResult.AsT1.Result}，对局结束。最终状态：")
-                            .Image(await state.GenerateBoardImage()));
+                            .Image(await state.GenerateBoardImage())
+                            .Text(state.GameSummary));
                         return;
                     case 2: // Illegal
                         await ev.QuoteReply(moveResult.AsT2.Message);
@@ -132,7 +159,9 @@ public abstract class TwoPlayerBoardGameState(long group, long player1, long pla
     public abstract string Player1Noun { get; } // A noun phrase e.g. "the white player"
     public abstract string Player2Noun { get; }
     public string NextPlayerNoun => Player1IsNext ? Player1Noun : Player2Noun;
+    public string NotNextPlayerNoun => Player1IsNext ? Player2Noun : Player1Noun;
     public abstract string PleaseStartPrompt { get; }
+    public virtual string GameSummary => "";
 
     public long GroupId => group;
     public long Player1Id => player1;
@@ -141,6 +170,6 @@ public abstract class TwoPlayerBoardGameState(long group, long player1, long pla
 
     public abstract bool IsMoveReply(string text);
     public abstract ValueTask<byte[]> GenerateBoardImage();
-    public abstract MoveResult PlayMove(string message);
+    public abstract ValueTask<MoveResult> PlayMove(string message);
     public abstract string DescribeState();
 }
