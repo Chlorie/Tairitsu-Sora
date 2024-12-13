@@ -102,12 +102,32 @@ public class ControllerInstance : IDisposable
         await ExpectServerInfoLog(["Saved the game"], 2.Minutes(), "save-all");
         await ExpectServerInfoLog(["Automatic saving is now enabled", "Saving is already turned on"], 10.Seconds(), "save-on");
         await EnsureBackupDirectoryExists(backupDir);
-        await CompressFiles(worldDir, zipPath, 5.Minutes());
 
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(Token);
+        BackupStatus status = new(0, 0, 0);
+
+        async Task CompressTask(CancellationTokenSource src)
+        {
+            await CompressFiles(worldDir, zipPath, 5.Minutes());
+            await src.CancelAsync();
+        }
+
+        async Task PruneTask(CancellationToken token)
+        {
+            async ValueTask Work(bool delay)
+            {
+                var s = await PruneOldBackups(backupDir, maxTotalSize);
+                status = s with { PrunedCount = status.PrunedCount + s.PrunedCount };
+                if (delay) await Task.Delay(10.Seconds(), token);
+            }
+            await AsyncExtensions.LoopUntilCancellation(() => Work(true));
+            await Work(false); // Need to prune one last time after the compression has completed
+        }
+
+        await Task.WhenAll(CompressTask(cts), PruneTask(cts.Token));
         const long giga = 1_000_000_000;
-        var status = await PruneOldBackups(backupDir, maxTotalSize);
         string msg = $"备份完成！留存 {status.CurrentCount} 个文件，删除旧文件 {status.PrunedCount} 个，" +
-                         $"文件共占 {(double)status.TotalSize / giga:0.00}GB";
+                     $"文件共占 {(double)status.TotalSize / giga:0.00}GB";
         await SendGroupMessage(msg);
     }
 
@@ -290,9 +310,9 @@ public class ControllerInstance : IDisposable
                     players ??= await _whitelistedPlayers.Get();
                     if (text.Split(' ', 2) is not [var name, var rest] ||
                         !players.Contains(name) ||
-                        rest.StartsWith("lost connection") ||
-                        rest.StartsWith("joined the game") ||
-                        rest.StartsWith("left the game"))
+                        rest.Contains("lost connection") ||
+                        rest.Contains("joined the game") ||
+                        rest.Contains("left the game"))
                         continue;
                 }
                 messages.Add(text);
