@@ -1,6 +1,7 @@
 ﻿using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using LanguageExt;
 using Sora.EventArgs.SoraEvent;
 using TairitsuSora.Core;
 using TairitsuSora.Utils;
@@ -110,6 +111,39 @@ public class Randomize : Command
             return args;
         });
         return $"{(updated ? "已更新" : "已设置")}列表 {name}";
+    }
+
+    [MessageHandler(Signature = "ls add $name $args", Description = "向名为 [name] 的自定义列表中添加选项 [args]")]
+    public string AddToPersonalList(GroupMessageEventArgs ev, string name, string[] args)
+    {
+        if (args.Length == 0) return "至少添加一个选项";
+        var dict = _personalLists.GetOrAdd(ev.SenderInfo.UserId, []);
+        var updated = dict.TryUpdate(name, (_, list) =>
+        {
+            string[] newList = [.. list, .. args];
+            return newList;
+        }).IsSome;
+        return $"{(updated ? "已更新" : "未找到")}列表 {name}";
+    }
+
+    [MessageHandler(Signature = "ls rm $name", Description = "移除名为 [name] 的自定义列表")]
+    public string RemovePersonalList(GroupMessageEventArgs ev, string name) => SetPersonalList(ev, name, []);
+
+    [MessageHandler(Signature = "ls rm $name $args", Description = "从名为 [name] 的自定义列表中移除选项 [args]")]
+    public string RemoveFromPersonalList(GroupMessageEventArgs ev, string name, string[] args)
+    {
+        if (!_personalLists.TryGetValue(ev.SenderInfo.UserId, out var dict))
+            return $"未找到名为 {name} 的列表";
+        System.Collections.Generic.HashSet<string> choices = [.. args];
+        var updateRes = dict.UpdateOrRemove(name, (_, list) =>
+        {
+            var newList = list.Filter(s => !choices.Contains(s)).ToArray();
+            return newList.Length < 2 || newList.All(s => s == newList[0])
+                ? Option<string[]>.None : newList;
+        });
+        return updateRes.Match(
+            Some: updated => updated.Match(_ => "已更新", "已删除"),
+            None: "未找到") + $"列表 {name}";
     }
 
     private ConcurrentDictionary<long, ConcurrentDictionary<string, string[]>> _personalLists = [];

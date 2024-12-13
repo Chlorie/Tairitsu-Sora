@@ -280,11 +280,8 @@ public class Dice : Command
         public override int Roll(DiceRoller recorder)
         {
             int result = 0;
-            checked
-            {
-                for (int i = 0; i < times; i++)
-                    result += expr.Roll(recorder);
-            }
+            for (int i = 0; i < times; i++)
+                result += expr.Roll(recorder);
             return result;
         }
     }

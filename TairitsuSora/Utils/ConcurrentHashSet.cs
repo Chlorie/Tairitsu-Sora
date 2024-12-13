@@ -1,5 +1,6 @@
 ﻿using System.Collections;
 using System.Collections.Immutable;
+using JetBrains.Annotations;
 
 namespace TairitsuSora.Utils;
 
@@ -12,7 +13,9 @@ public class ConcurrentHashSet<T> : ISet<T>, IReadOnlySet<T>
     public ConcurrentHashSet(IEnumerable<T> collection) => _data = ImmutableHashSet.CreateRange(collection);
     public ConcurrentHashSet(ImmutableHashSet<T> data) => _data = data;
 
+    [MustDisposeResource]
     public IEnumerator<T> GetEnumerator() => _data.GetEnumerator();
+    [MustDisposeResource]
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     void ICollection<T>.Add(T item) => Add(item);
     bool ISet<T>.Add(T item) => Add(item);

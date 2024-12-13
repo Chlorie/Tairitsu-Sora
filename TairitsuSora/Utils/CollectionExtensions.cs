@@ -1,4 +1,7 @@
-﻿namespace TairitsuSora.Utils;
+﻿using System.Collections.Concurrent;
+using LanguageExt;
+
+namespace TairitsuSora.Utils;
 
 public static class CollectionExtensions
 {
@@ -38,8 +41,8 @@ public static class CollectionExtensions
         }
     }
 
-    public static T Sample<T>(this IList<T> list) => list[Random.Shared.Next(list.Count)];
-    public static T Sample<T>(this IList<T> list, Random random) => list[random.Next(list.Count)];
+    public static T Sample<T>(this IReadOnlyList<T> list) => list[Random.Shared.Next(list.Count)];
+    public static T Sample<T>(this IReadOnlyList<T> list, Random random) => list[random.Next(list.Count)];
 
     public static int? ParseConsumeLeadingPositiveInt(this ref ReadOnlySpan<char> span)
     {
@@ -65,6 +68,53 @@ public static class CollectionExtensions
         if (span.IsEmpty || span[0] != other) return false;
         span = span[1..];
         return true;
+    }
+
+    public static Option<TValue> TryUpdate<TKey, TValue>(this ConcurrentDictionary<TKey, TValue> dict, TKey key,
+        Func<TKey, TValue, TValue> updateValueFactory) where TKey : notnull
+    {
+        while (true)
+        {
+            if (!dict.TryGetValue(key, out var expected))
+                return Option<TValue>.None;
+            var newValue = updateValueFactory(key, expected);
+            if (dict.TryUpdate(key, newValue, expected))
+                return newValue;
+        }
+    }
+
+    /// <summary>
+    /// Update or remove an item in a <see cref="ConcurrentDictionary{TKey,TValue}"/>.
+    /// </summary>
+    /// <param name="dict">The dictionary.</param>
+    /// <param name="key">The key to update or remove.</param>
+    /// <param name="updateValueFactory">
+    /// If the key exists in the dictionary, this factory is invoked to create the new value for the item. <br/>
+    /// If the new value is <see cref="Option{TValue}.None"/>, the item is removed, otherwise it is updated.
+    /// </param>
+    /// <returns>
+    /// If such key does not exist in the dictionary, returns None;
+    /// otherwise, returns the value produced by the factory.
+    /// </returns>
+    public static Option<Option<TValue>> UpdateOrRemove<TKey, TValue>(this ConcurrentDictionary<TKey, TValue> dict, TKey key,
+        Func<TKey, TValue, Option<TValue>> updateValueFactory) where TKey : notnull
+    {
+        while (true)
+        {
+            if (!dict.TryGetValue(key, out var expected))
+                return Option<Option<TValue>>.None;
+            var updated = updateValueFactory(key, expected);
+            if (updated.IsNone)
+            {
+                if (dict.TryRemove(key, out _))
+                    return Option<Option<TValue>>.Some(Option<TValue>.None);
+            }
+            else
+            {
+                if (dict.TryUpdate(key, updated.Get(), expected))
+                    return updated;
+            }
+        }
     }
 
     public static IDisposable Disposer(this IEnumerable<IDisposable> disposables)
