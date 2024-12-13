@@ -238,7 +238,7 @@ public class JapaneseWordle : GroupGame
 
         private const string ShownCandidates =
             "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもや ゆ よらりるれろわ   を" +
-            "ぁぃぅぇぉがぎぐげござじずぜぞだぢづでどぱぴぷぺぽばびぶべぼゃ ゅ ょーっんゔ ";
+            "ぁぃぅぇぉがぎぐげござじずぜぞだぢづでどぱぴぷぺぽばびぶべぼゃ ゅ ょーっゔん ";
         private List<CharState[]> _guesses = [];
     }
 

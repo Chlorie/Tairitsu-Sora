@@ -58,10 +58,9 @@ public class LatexRenderer : Command
             UseShellExecute = false,
             ArgumentList =
             {
-                "-density", "200", $"temp/{guid}.pdf",
+                "-density", "300", "-units", "pixelsperinch", $"temp/{guid}.pdf",
                 "-background", "white", "-alpha", "remove", "-alpha", "off",
-                "-append", "-resize", "1280x",
-                "-trim", "-bordercolor", "white", "-border", "15",
+                "-append", "-trim", "-bordercolor", "white", "-border", "15",
                 "+repage", $"temp/{guid}.png"
             }
         }.RunAsync(20.Seconds(), Application.Instance.CancellationToken);
