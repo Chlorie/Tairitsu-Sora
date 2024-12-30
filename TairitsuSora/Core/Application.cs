@@ -107,8 +107,9 @@ public class Application : IDisposable
             AccessToken = _config.OneBotConfig.AccessToken,
             Host = _config.OneBotConfig.Host,
             Port = _config.OneBotConfig.Port,
-            ReconnectTimeOut = 60.Seconds(),
-            HeartBeatTimeOut = 60.Seconds()
+            HeartBeatTimeOut = 20.Seconds(),
+            ReconnectTimeOut = 1.Minutes(),
+            EnableSoraCommandManager = false
         });
         _eventChannel = new EventChannel(_service);
     }

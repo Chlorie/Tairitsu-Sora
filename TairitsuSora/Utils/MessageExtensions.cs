@@ -138,4 +138,7 @@ public static class MessageExtensions
 
     public static bool IsAdmin(this GroupSenderInfo sender)
         => sender.Role >= MemberRoleType.Admin || Application.Instance.Admins.Contains(sender.UserId);
+
+    public static string CardOrNick(this GroupSenderInfo sender)
+        => string.IsNullOrEmpty(sender.Card) ? sender.Nick : sender.Card;
 }

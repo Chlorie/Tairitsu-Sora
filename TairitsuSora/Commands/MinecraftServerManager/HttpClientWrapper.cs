@@ -1,5 +1,4 @@
-﻿using System.Net.Http.Json;
-using RateLimiter;
+﻿using RateLimiter;
 using TairitsuSora.Commands.MinecraftServerManager;
 
 namespace TairitsuSora.TairitsuSora.Commands.MinecraftServerManager;

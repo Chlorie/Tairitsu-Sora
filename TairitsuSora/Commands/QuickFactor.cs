@@ -107,7 +107,7 @@ public class QuickFactor : GroupGame
                     return false;
             }
         }
-        return parsedAnswer.SequenceEqual(answer);
+        return parsedAnswer.SequenceEqual(answer, KeyValuePairComparer<int, int>.Instance);
     }
 
     private void AddToKey(SortedDictionary<int, int> dict, int key, int increment)
