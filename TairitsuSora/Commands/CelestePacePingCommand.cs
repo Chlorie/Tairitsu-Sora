@@ -1,12 +1,12 @@
 ﻿using System.Collections.Concurrent;
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using JetBrains.Annotations;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
+using Sora.Entities;
 using Sora.EventArgs.SoraEvent;
 using TairitsuSora.Commands.CelestePacePing;
 using TairitsuSora.Core;
@@ -77,9 +77,19 @@ public class CelestePacePingCommand : Command
     public string UnbindPing(GroupMessageEventArgs ev)
     {
         if (_config is null) return "未配置 Pace Ping 服务器，本功能不可用。";
-        long groupId = ev.SourceGroup.Id, userId = ev.Sender.Id;
-        return _config.Pings.TryRemove(new MemberId(groupId, userId), out _)
-            ? "解绑成功。" : "您未在本群绑定过 Pace Ping 服务。";
+        return _config.Pings.TryRemove(new MemberId(ev.SourceGroup.Id, ev.Sender.Id), out _)
+            ? "解绑成功。"
+            : "您未在本群绑定过 Pace Ping 服务。";
+    }
+
+    [MessageHandler(Signature = "rename $name", Description = "修改玩家显示名为 [name]。")]
+    public string Rename(GroupMessageEventArgs ev, string name)
+    {
+        if (_config is null) return "未配置 Pace Ping 服务器，本功能不可用。";
+        return _config.Pings.TryUpdate(new MemberId(ev.SourceGroup.Id, ev.Sender.Id),
+            (_, old) => old with { UserName = name }).IsSome
+            ? "修改成功。"
+            : "您未在本群绑定过 Pace Ping 服务。";
     }
 
     [UsedImplicitly]
@@ -109,33 +119,40 @@ public class CelestePacePingCommand : Command
     private class PingProcessor(CelestePacePingCommand parent) : IDiscordRequestProcessor
     {
         public async ValueTask<IActionResult> ProcessRequest(
-            MemberId member, string token, DiscordWebhookRequest request)
+            MemberId member, string token, string? patchedId, DiscordWebhookRequest request)
         {
             if (!Pings.TryGetValue(member, out var ping) || ping.Token != token)
                 return new BadRequestResult();
-            await Application.Api.SendGroupMessage(member.GroupId, FormatMessage(request, ping.UserName));
-            return new OkResult();
+            var (_, msgId) = await Application.Api.SendGroupMessage(member.GroupId, CreateMessage(request, ping.UserName));
+            if (patchedId is not null && int.TryParse(patchedId, out int prevMsg))
+                await Application.Api.RecallMessage(prevMsg);
+            return new OkObjectResult(CreateResponse(msgId, member, request));
         }
 
         private ConcurrentDictionary<MemberId, PingConfig> Pings => parent._config!.Pings;
 
-        private string FormatMessage(DiscordWebhookRequest request, string userName)
+        private MessageBody CreateMessage(DiscordWebhookRequest request, string userName)
         {
             var converter = parent._converter!;
-            StringBuilder sb = new();
-            sb.Append($"{request.Username} - {userName}".ToSansBoldItalicScript())
-                .AppendLine().Append(converter.Convert(request.Content));
+            string title = $"{request.Username} - {userName}".ToSansBoldItalicScript();
+            string content = converter.Convert(request.Content);
+            using EmbedRenderer renderer = new(converter);
+            MessageBody body = [$"{title}\n{content}\n"];
             foreach (var embed in request.Embeds)
-            {
-                sb.AppendLine().Append(converter.Convert(embed.Title));
-                foreach (var field in embed.Fields)
-                    sb.AppendLine()
-                        .Append(converter.Convert(field.Name).ToSansBoldItalicScript())
-                        .Append(':').Append(field.Inline ? ' ' : '\n')
-                        .Append(converter.Convert(field.Value));
-            }
-            return sb.ToString();
+                body.Image(renderer.Render(embed));
+            return body;
         }
+
+        private static DiscordWebhookResponse CreateResponse(
+            int msgId, MemberId member, DiscordWebhookRequest request) =>
+            new(
+                Id: msgId.ToString(), Type: 0, Content: request.Content, ChannelId: member.GroupId.ToString(),
+                Author: new DiscordWebhookResponse.User("", request.Username, ""),
+                Embeds: request.Embeds, Attachments: [], Mentions: [], MentionRoles: [], Pinned: false,
+                MentionEveryone: false, Tts: false,
+                Timestamp: DateTimeOffset.UtcNow, EditedTimestamp: DateTimeOffset.UtcNow,
+                Flags: 0, Components: [], WebhookId: null
+            );
     }
 
     private CommandConfig? _config;

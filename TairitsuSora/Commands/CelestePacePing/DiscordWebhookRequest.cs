@@ -2,6 +2,7 @@
 
 namespace TairitsuSora.Commands.CelestePacePing;
 
+[SuppressMessage("ReSharper", "NotAccessedPositionalProperty.Global")]
 [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
 public record DiscordWebhookRequest(
     string Username,
@@ -14,7 +15,7 @@ public record DiscordWebhookRequest(
         Author? Author,
         string Title,
         string? Url,
-        string Description,
+        string? Description,
         int Color,
         List<Field> Fields,
         Thumbnail? Thumbnail,

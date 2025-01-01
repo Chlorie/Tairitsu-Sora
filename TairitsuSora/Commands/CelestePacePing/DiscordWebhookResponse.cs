@@ -1,11 +1,14 @@
-﻿namespace TairitsuSora.Commands.CelestePacePing;
+﻿using JetBrains.Annotations;
 
+namespace TairitsuSora.Commands.CelestePacePing;
+
+[UsedImplicitly]
 public record DiscordWebhookResponse(
     string Id,
     int Type,
     string Content,
     string ChannelId,
-    DiscordWebhookResponse.AuthorType Author,
+    DiscordWebhookResponse.User Author,
     List<object> Attachments,
     List<DiscordWebhookRequest.Embed> Embeds,
     List<object> Mentions,
@@ -14,19 +17,21 @@ public record DiscordWebhookResponse(
     bool MentionEveryone,
     bool Tts,
     DateTimeOffset Timestamp,
-    object EditedTimestamp,
+    DateTimeOffset? EditedTimestamp,
     int Flags,
     List<object> Components,
-    string WebhookId
+    string? WebhookId
     )
 {
-    public record AuthorType(
+    [UsedImplicitly]
+    public record User(
         string Id,
         string Username,
-        object Avatar,
         string Discriminator,
-        int PublicFlags,
-        int Flags,
-        bool Bot
+        string? GlobalName = null,
+        string? Avatar = null,
+        int PublicFlags = 0,
+        int Flags = 0,
+        bool Bot = false
     );
 }
