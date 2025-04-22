@@ -1,5 +1,4 @@
 ﻿using LanguageExt.UnitsOfMeasure;
-using OneOf;
 using Sora.Entities;
 using Sora.EventArgs.SoraEvent;
 using TairitsuSora.Core;
@@ -50,7 +49,7 @@ public abstract class TwoPlayerBoardGame : GroupGame
             await ev.QuoteReply("2 分钟内无人接受挑战，自动取消。");
             return null;
         }
-        if (accept.FromSameMember(ev))
+        if (accept.FromSameMember(ev) && !Application.Instance.Admins.Contains(accept.Sender.Id))
         {
             await accept.QuoteReply("您好，我这里不提供左右互搏服务呢。");
             return null;
@@ -78,79 +77,122 @@ public abstract class TwoPlayerBoardGame : GroupGame
             => await Application.Api.SendGroupMessage(group, new MessageBody()
                 .Text($"{state.DescribeState()}当前状态：").Image(await state.GenerateBoardImage()));
 
+        async ValueTask GameEnds(string reason) =>
+            await Application.Api.SendGroupMessage(group, new MessageBody()
+                .Text($"{reason}，对局结束。最终状态：")
+                .Image(await state.GenerateBoardImage())
+                .Text(state.GameSummary));
+
+        bool p1Draw = false, p2Draw = false;
+        MoveTimeLimit? timeLimit = state.TimeLimit;
+        DateTime startTime = DateTime.Now;
         while (true)
         {
-            bool p1Draw = false, p2Draw = false;
-            while (true)
+            TimeSpan delay = Timeout.InfiniteTimeSpan;
+            if (timeLimit is { Seconds: var limit })
+                delay = startTime.AddSeconds(limit) - DateTime.Now;
+            if (delay.Ticks <= 0)
             {
-                GroupMessageEventArgs ev =
-                    (await Application.EventChannel.WaitNextGroupMessage(IsGameReply, Timeout.InfiniteTimeSpan))!;
-                bool isPlayer1 = ev.SenderInfo.UserId == player1;
-                string text = ev.Message.MessageBody.GetIfOnlyText()!;
-                switch (text)
+                await GameEnds($"{state.NextPlayerNoun}时间耗尽判负");
+                return;
+            }
+            using CancellationTokenSource src = new();
+            var timeNoticeTask = Task.CompletedTask;
+            if (timeLimit is { NoticeSeconds: not null })
+                timeNoticeTask = SendTimeLimitNotice(group, startTime, timeLimit, src.Token).AsTask();
+            var waitMsgTask = Application.EventChannel.WaitNextGroupMessage(IsGameReply, delay).AsTask();
+            await Task.WhenAny(timeNoticeTask, waitMsgTask);
+            await src.CancelAsync();
+            GroupMessageEventArgs? ev = await waitMsgTask;
+            if (ev is null)
+            {
+                await GameEnds($"{state.NextPlayerNoun}时间耗尽判负");
+                return;
+            }
+
+            bool isPlayer1 = ev.SenderInfo.UserId == player1;
+            string text = ev.Message.MessageBody.GetIfOnlyText()!;
+            switch (text)
+            {
+                case "r":
                 {
-                    case "r":
-                    {
-                        string playerNoun = isPlayer1 ? state.Player1Noun : state.Player2Noun;
-                        await Application.Api.SendGroupMessage(group, new MessageBody()
-                            .Text($"由于{playerNoun}认输，对局结束。最终状态：")
-                            .Image(await state.GenerateBoardImage())
-                            .Text(state.GameSummary));
-                        return;
-                    }
-                    case "s":
-                    {
-                        await ShowBoard();
-                        continue;
-                    }
-                    case "d":
-                    {
-                        if (isPlayer1) p1Draw = true;
-                        else p2Draw = true;
-                        if (p1Draw && p2Draw)
-                        {
-                            await Application.Api.SendGroupMessage(group, new MessageBody()
-                                .Text("由于双方同意平局，对局结束。最终状态：")
-                                .Image(await state.GenerateBoardImage())
-                                .Text(state.GameSummary));
-                            return;
-                        }
-                        await Application.Api.SendGroupMessage(group, new MessageBody()
-                            .At(ev.Sender.Id).Text("发出了求和申请。"));
-                        continue;
-                    }
+                    string playerNoun = isPlayer1 ? state.Player1Noun : state.Player2Noun;
+                    await GameEnds($"由于{playerNoun}认输");
+                    return;
                 }
-                if (isPlayer1 != state.Player1IsNext)
+                case "s":
                 {
-                    await ev.QuoteReply("你先别急");
+                    await ShowBoard();
                     continue;
                 }
-                var moveResult = await state.PlayMove(text);
-                switch (moveResult.Index)
+                case "d":
                 {
-                    case 0: await ShowBoard(); continue; // Ongoing
-                    case 1: // Terminal
-                        await Application.Api.SendGroupMessage(group, new MessageBody()
-                            .Text($"{moveResult.AsT1.Result}，对局结束。最终状态：")
-                            .Image(await state.GenerateBoardImage())
-                            .Text(state.GameSummary));
+                    if (isPlayer1) p1Draw = true;
+                    else p2Draw = true;
+                    if (p1Draw && p2Draw)
+                    {
+                        await GameEnds("由于双方同意平局");
                         return;
-                    case 2: // Illegal
-                        await ev.QuoteReply(moveResult.AsT2.Message);
-                        continue;
-                    default: throw new ArgumentOutOfRangeException();
+                    }
+                    await Application.Api.SendGroupMessage(group, new MessageBody()
+                        .At(ev.Sender.Id).Text("发出了求和申请。"));
+                    continue;
                 }
+            }
+            if (ev.SenderInfo.UserId != (state.Player1IsNext ? player1 : player2))
+            {
+                await ev.QuoteReply("你先别急");
+                continue;
+            }
+            p1Draw = p2Draw = false;
+            var moveResult = await state.PlayMove(text);
+            switch (moveResult)
+            {
+                case Ongoing:
+                    await ShowBoard();
+                    startTime = DateTime.Now;
+                    continue;
+                case Terminal terminal:
+                    await GameEnds(terminal.Result);
+                    return;
+                case Illegal illegal:
+                    await ev.QuoteReply(illegal.Message);
+                    continue;
+                default: throw new ArgumentOutOfRangeException();
             }
         }
     }
+
+    private static async ValueTask SendTimeLimitNotice(
+        long group, DateTime start, MoveTimeLimit timeLimit, CancellationToken token)
+    {
+        if (timeLimit.NoticeSeconds is null or { Count: 0 }) return;
+        List<long> notices = [.. timeLimit.NoticeSeconds];
+        notices.Sort((l, r) => r.CompareTo(l));
+        DateTime final = start.AddSeconds(timeLimit.Seconds);
+        DateTime[] deadlines = notices.Select(l => final.AddSeconds(-l)).ToArray();
+        try
+        {
+            foreach (var (ddl, seconds) in deadlines.Zip(notices))
+            {
+                var delay = ddl - DateTime.Now;
+                if (delay.Ticks <= 0) continue;
+                await Task.Delay(delay, token);
+                await Application.Api.SendGroupMessage(group, $"剩余 {seconds} 秒！");
+            }
+            await token.WaitUntilCanceled();
+        }
+        catch (OperationCanceledException) { }
+    }
 }
 
-public record struct Ongoing;
-public record struct Terminal(string Result);
-public record struct Illegal(string Message);
+public abstract record MoveResult;
 
-[GenerateOneOf]
-public partial class MoveResult : OneOfBase<Ongoing, Terminal, Illegal>;
+public record Ongoing : MoveResult;
+public record Terminal(string Result) : MoveResult;
+public record Illegal(string Message) : MoveResult;
+
+public record MoveTimeLimit(long Seconds, List<long>? NoticeSeconds = null);
 
 public abstract class TwoPlayerBoardGameState(long group, long player1, long player2)
 {
@@ -162,6 +204,7 @@ public abstract class TwoPlayerBoardGameState(long group, long player1, long pla
     public string NotNextPlayerNoun => Player1IsNext ? Player2Noun : Player1Noun;
     public abstract string PleaseStartPrompt { get; }
     public virtual string GameSummary => "";
+    public virtual MoveTimeLimit? TimeLimit => null;
 
     public long GroupId => group;
     public long Player1Id => player1;

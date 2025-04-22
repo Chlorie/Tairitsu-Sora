@@ -1,6 +1,6 @@
 ﻿namespace TairitsuSora.Utils;
 
-public class MaybeDisposable(object obj) : IDisposable
+public class MaybeDisposable(object? obj) : IDisposable
 {
     public void Dispose()
     {

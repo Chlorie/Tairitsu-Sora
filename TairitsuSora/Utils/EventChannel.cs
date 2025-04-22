@@ -25,6 +25,16 @@ public class EventChannel : IDisposable
     }
 
     public async ValueTask<GroupMessageEventArgs?> WaitNextGroupMessage(
+        Predicate<GroupMessageEventArgs> predicate, DateTime deadline)
+    {
+        Waiter waiter = new(predicate);
+        _waiters.TryAdd(waiter.Id, waiter);
+        var res = await waiter.WaitNextEvent(deadline);
+        _waiters.Remove(waiter.Id, out _);
+        return res;
+    }
+
+    public async ValueTask<GroupMessageEventArgs?> WaitNextGroupMessage(
         Predicate<GroupMessageEventArgs> predicate, CancellationToken token)
     {
         Waiter waiter = new(predicate);
@@ -43,6 +53,9 @@ public class EventChannel : IDisposable
             try { return await _semaphore.WaitAsync(timeout) ? _eventArgs : null; }
             catch (ObjectDisposedException) { return null; }
         }
+
+        public ValueTask<GroupMessageEventArgs?> WaitNextEvent(DateTime deadline) =>
+            WaitNextEvent(deadline - DateTime.Now);
 
         public async ValueTask<GroupMessageEventArgs?> WaitNextEvent(CancellationToken token)
         {

@@ -112,12 +112,4 @@ public class BoardDrawer : IDisposable
             _canvas.DrawText(file, new SKPoint((i + 1) * CellSize, 0) + FileOffset, _paint);
         }
     }
-
-    private void FillSection(int rank, int file, SKColor color)
-    {
-        _paint.Color = color;
-        _paint.Style = SKPaintStyle.Fill;
-        _canvas.DrawRect(3 * file * CellSize + LineThickness / 2, 3 * rank * CellSize + LineThickness / 2,
-            3 * CellSize - LineThickness, 3 * CellSize - LineThickness, _paint);
-    }
 }
